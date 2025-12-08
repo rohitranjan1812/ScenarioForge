@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with TimescaleDB extension for time-series data
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: scenarioforge-postgres
+    environment:
+      POSTGRES_USER: scenarioforge
+      POSTGRES_PASSWORD: scenarioforge
+      POSTGRES_DB: scenarioforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./apps/api/src/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scenarioforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: scenarioforge-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
