@@ -11,18 +11,52 @@ import {
 import type {
   Graph,
   NodeDefinition,
+  EdgeDefinition,
   SimulationConfig,
   ExpressionContext,
+  Port,
+  NodeType,
 } from '../types/index.js';
+
+// Helper to create a port
+function createPort(id: string, name: string, dataType: 'number' | 'string' | 'boolean' | 'object' | 'array' | 'any' = 'number'): Port {
+  return { id, name, dataType, required: true, multiple: false };
+}
+
+// Helper to create an edge
+function createEdge(
+  id: string,
+  sourceNodeId: string,
+  sourcePortId: string,
+  targetNodeId: string,
+  targetPortId: string
+): EdgeDefinition {
+  const now = new Date();
+  return {
+    id,
+    sourceNodeId,
+    sourcePortId,
+    targetNodeId,
+    targetPortId,
+    type: 'DATA_FLOW',
+    schema: { type: 'object' },
+    data: {},
+    style: {},
+    animated: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 // Helper to create a minimal node
 function createNode(
   id: string,
-  type: string,
+  type: NodeType,
   data: Record<string, unknown> = {},
-  inputPorts: NodeDefinition['inputPorts'] = [],
-  outputPorts: NodeDefinition['outputPorts'] = [{ id: 'out', name: 'output', dataType: 'number' }]
+  inputPorts: Port[] = [],
+  outputPorts: Port[] = [createPort('out', 'output', 'number')]
 ): NodeDefinition {
+  const now = new Date();
   return {
     id,
     type,
@@ -32,18 +66,25 @@ function createNode(
     inputPorts,
     outputPorts,
     position: { x: 0, y: 0 },
-    metadata: {},
+    tags: [],
+    locked: false,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
 // Helper to create empty graph
 function createEmptyGraph(): Graph {
+  const now = new Date();
   return {
     id: 'test-graph',
     name: 'Test Graph',
     nodes: [],
     edges: [],
-    metadata: { createdAt: new Date(), updatedAt: new Date() },
+    metadata: {},
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -77,18 +118,10 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('const1', 'CONSTANT', { value: 42 }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'const1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'const1', 'out', 'output1', 'in'),
       ];
 
       const result = executeGraph(graph);
@@ -102,28 +135,12 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('const1', 'CONSTANT', { value: 10 }),
-        createNode('transform1', 'TRANSFORMER', { expression: '$inputs.input * 2' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('transform1', 'TRANSFORMER', { expression: '$inputs.input * 2' }, [createPort('in', 'input')]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'const1',
-          sourcePortId: 'out',
-          targetNodeId: 'transform1',
-          targetPortId: 'in',
-        },
-        {
-          id: 'e2',
-          sourceNodeId: 'transform1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'const1', 'out', 'transform1', 'in'),
+        createEdge('e2', 'transform1', 'out', 'output1', 'in'),
       ];
 
       const result = executeGraph(graph);
@@ -139,35 +156,15 @@ describe('Simulation Engine', () => {
         createNode('const1', 'CONSTANT', { value: 10 }),
         createNode('const2', 'CONSTANT', { value: 20 }),
         createNode('agg1', 'AGGREGATOR', { method: 'sum' }, [
-          { id: 'in1', name: 'input1', dataType: 'number' },
-          { id: 'in2', name: 'input2', dataType: 'number' },
+          createPort('in1', 'input1'),
+          createPort('in2', 'input2'),
         ]),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'const1',
-          sourcePortId: 'out',
-          targetNodeId: 'agg1',
-          targetPortId: 'in1',
-        },
-        {
-          id: 'e2',
-          sourceNodeId: 'const2',
-          sourcePortId: 'out',
-          targetNodeId: 'agg1',
-          targetPortId: 'in2',
-        },
-        {
-          id: 'e3',
-          sourceNodeId: 'agg1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'const1', 'out', 'agg1', 'in1'),
+        createEdge('e2', 'const2', 'out', 'agg1', 'in2'),
+        createEdge('e3', 'agg1', 'out', 'output1', 'in'),
       ];
 
       const result = executeGraph(graph);
@@ -182,35 +179,15 @@ describe('Simulation Engine', () => {
         createNode('const1', 'CONSTANT', { value: 10 }),
         createNode('const2', 'CONSTANT', { value: 30 }),
         createNode('agg1', 'AGGREGATOR', { method: 'mean' }, [
-          { id: 'in1', name: 'input1', dataType: 'number' },
-          { id: 'in2', name: 'input2', dataType: 'number' },
+          createPort('in1', 'input1'),
+          createPort('in2', 'input2'),
         ]),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'const1',
-          sourcePortId: 'out',
-          targetNodeId: 'agg1',
-          targetPortId: 'in1',
-        },
-        {
-          id: 'e2',
-          sourceNodeId: 'const2',
-          sourcePortId: 'out',
-          targetNodeId: 'agg1',
-          targetPortId: 'in2',
-        },
-        {
-          id: 'e3',
-          sourceNodeId: 'agg1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'const1', 'out', 'agg1', 'in1'),
+        createEdge('e2', 'const2', 'out', 'agg1', 'in2'),
+        createEdge('e3', 'agg1', 'out', 'output1', 'in'),
       ];
 
       const result = executeGraph(graph);
@@ -223,18 +200,10 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('transform1', 'TRANSFORMER', { expression: '$params.multiplier * 5' }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'transform1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'transform1', 'out', 'output1', 'in'),
       ];
 
       const result = executeGraph(graph, { multiplier: 3 });
@@ -246,28 +215,12 @@ describe('Simulation Engine', () => {
     it('should handle cyclic graphs gracefully', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
-        createNode('node1', 'TRANSFORMER', { expression: '$inputs.input + 1' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
-        createNode('node2', 'TRANSFORMER', { expression: '$inputs.input + 1' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('node1', 'TRANSFORMER', { expression: '$inputs.input + 1' }, [createPort('in', 'input')]),
+        createNode('node2', 'TRANSFORMER', { expression: '$inputs.input + 1' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'node1',
-          sourcePortId: 'out',
-          targetNodeId: 'node2',
-          targetPortId: 'in',
-        },
-        {
-          id: 'e2',
-          sourceNodeId: 'node2',
-          sourcePortId: 'out',
-          targetNodeId: 'node1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'node1', 'out', 'node2', 'in'),
+        createEdge('e2', 'node2', 'out', 'node1', 'in'),
       ];
 
       const result = executeGraph(graph);
@@ -399,19 +352,11 @@ describe('Simulation Engine', () => {
 
       const graph = createEmptyGraph();
       graph.nodes = [
-        createNode('custom1', 'CUSTOM_DOUBLE', { value: 21 }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('custom1', 'CUSTOM_DOUBLE' as NodeType, { value: 21 }),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'custom1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'custom1', 'out', 'output1', 'in'),
       ];
 
       const result = executeGraph(graph);
@@ -426,18 +371,10 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('const1', 'CONSTANT', { value: 100 }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'const1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'const1', 'out', 'output1', 'in'),
       ];
 
       const config = createSimConfig({ iterations: 10 });
@@ -457,18 +394,10 @@ describe('Simulation Engine', () => {
           distributionType: 'normal',
           parameters: { mean: 100, std: 10 },
         }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'dist1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'dist1', 'out', 'output1', 'in'),
       ];
 
       const config = createSimConfig({ iterations: 100, seed: 12345 });
@@ -487,18 +416,10 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('const1', 'CONSTANT', { value: 1 }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'const1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'const1', 'out', 'output1', 'in'),
       ];
 
       const progressReports: number[] = [];
@@ -517,18 +438,10 @@ describe('Simulation Engine', () => {
           distributionType: 'normal',
           parameters: { mean: 100, std: 10 },
         }),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'dist1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'dist1', 'out', 'output1', 'in'),
       ];
 
       const config = createSimConfig({ iterations: 1000, seed: 42 });
@@ -602,28 +515,12 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('param1', 'PARAMETER', { value: 10 }),
-        createNode('transform1', 'TRANSFORMER', { expression: '$inputs.input * 2' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('transform1', 'TRANSFORMER', { expression: '$inputs.input * 2' }, [createPort('in', 'input')]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'param1',
-          sourcePortId: 'out',
-          targetNodeId: 'transform1',
-          targetPortId: 'in',
-        },
-        {
-          id: 'e2',
-          sourceNodeId: 'transform1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'param1', 'out', 'transform1', 'in'),
+        createEdge('e2', 'transform1', 'out', 'output1', 'in'),
       ];
 
       const result = runSensitivityAnalysis(
@@ -662,28 +559,12 @@ describe('Simulation Engine', () => {
       const graph = createEmptyGraph();
       graph.nodes = [
         createNode('param1', 'PARAMETER', { value: 50 }),
-        createNode('transform1', 'TRANSFORMER', { expression: '$inputs.input * 2' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
-        createNode('output1', 'OUTPUT', { label: 'result' }, [
-          { id: 'in', name: 'input', dataType: 'number' }
-        ]),
+        createNode('transform1', 'TRANSFORMER', { expression: '$inputs.input * 2' }, [createPort('in', 'input')]),
+        createNode('output1', 'OUTPUT', { label: 'result' }, [createPort('in', 'input')]),
       ];
       graph.edges = [
-        {
-          id: 'e1',
-          sourceNodeId: 'param1',
-          sourcePortId: 'out',
-          targetNodeId: 'transform1',
-          targetPortId: 'in',
-        },
-        {
-          id: 'e2',
-          sourceNodeId: 'transform1',
-          sourcePortId: 'out',
-          targetNodeId: 'output1',
-          targetPortId: 'in',
-        }
+        createEdge('e1', 'param1', 'out', 'transform1', 'in'),
+        createEdge('e2', 'transform1', 'out', 'output1', 'in'),
       ];
 
       const result = runSensitivityAnalysis(
