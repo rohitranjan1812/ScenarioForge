@@ -1159,7 +1159,7 @@ function createSimpleSubgraphDemo(): Graph {
     nodes, edges
   );
 
-  // Add hierarchical metadata
+  // Add hierarchical metadata with nested graph definitions
   g.metadata = {
     hierarchical: {
       depth: 2,
@@ -1174,11 +1174,92 @@ function createSimpleSubgraphDemo(): Graph {
         enabled: true
       }]
     },
+    // Embedded nested graphs for drill-down
+    nestedGraphs: {
+      'profit-calc-subgraph': createProfitCalculatorSubgraph(),
+      'growth-proj-subgraph': createGrowthProjectorSubgraph(),
+    },
     features: ['subgraph', 'feedback', 'decision'],
     complexity: 'intermediate',
     tutorial: true
   };
   
+  return g;
+}
+
+// ============================================================================
+// NESTED SUBGRAPH DEFINITIONS
+// ============================================================================
+
+function createProfitCalculatorSubgraph(): Graph {
+  // Input nodes (exposed ports)
+  const revenueIn = node('DATA_SOURCE', '📥 Revenue Input', 50, 100, 
+    { isExposedPort: true, portName: 'revenue' }, [], ['value']);
+  const costsIn = node('DATA_SOURCE', '📥 Costs Input', 50, 250, 
+    { isExposedPort: true, portName: 'costs' }, [], ['value']);
+  
+  // Calculation nodes
+  const grossProfit = node('TRANSFORMER', '➖ Gross Profit', 250, 150, 
+    { expression: '$inputs.revenue - $inputs.costs' }, ['revenue', 'costs'], ['profit']);
+  const profitMargin = node('TRANSFORMER', '📊 Profit Margin %', 450, 150, 
+    { expression: '($inputs.profit / $inputs.revenue) * 100' }, ['profit', 'revenue'], ['margin']);
+  
+  // Output nodes (exposed ports)
+  const profitOut = node('OUTPUT', '📤 Gross Profit', 650, 100, 
+    { isExposedPort: true, portName: 'grossProfit' }, ['value'], []);
+  const marginOut = node('OUTPUT', '📤 Profit Margin', 650, 250, 
+    { isExposedPort: true, portName: 'profitMargin' }, ['value'], []);
+
+  const nodes = [revenueIn, costsIn, grossProfit, profitMargin, profitOut, marginOut];
+  const edges = [
+    edge(revenueIn, grossProfit, 0, 0),
+    edge(costsIn, grossProfit, 0, 1),
+    edge(grossProfit, profitMargin, 0, 0),
+    edge(revenueIn, profitMargin, 0, 1),
+    edge(grossProfit, profitOut, 0, 0),
+    edge(profitMargin, marginOut, 0, 0),
+  ];
+
+  const g = graph('📦 Profit Calculator', 'Calculates gross profit and profit margin from revenue and costs', nodes, edges);
+  g.id = 'profit-calc-subgraph';
+  return g;
+}
+
+function createGrowthProjectorSubgraph(): Graph {
+  // Input nodes (exposed ports)
+  const baseValueIn = node('DATA_SOURCE', '📥 Base Value', 50, 100, 
+    { isExposedPort: true, portName: 'baseValue' }, [], ['value']);
+  const growthRateIn = node('DATA_SOURCE', '📥 Growth Rate', 50, 300, 
+    { isExposedPort: true, portName: 'growthRate' }, [], ['rate']);
+  
+  // Projection nodes
+  const year1 = node('TRANSFORMER', '📅 Year 1', 250, 50, 
+    { expression: '$inputs.base * (1 + $inputs.rate / 100)' }, ['base', 'rate'], ['projected']);
+  const year3 = node('TRANSFORMER', '📅 Year 3', 250, 200, 
+    { expression: '$inputs.base * Math.pow(1 + $inputs.rate / 100, 3)' }, ['base', 'rate'], ['projected']);
+  const year5 = node('TRANSFORMER', '📅 Year 5', 250, 350, 
+    { expression: '$inputs.base * Math.pow(1 + $inputs.rate / 100, 5)' }, ['base', 'rate'], ['projected']);
+  
+  // Output nodes (exposed ports)
+  const year1Out = node('OUTPUT', '📤 Year 1 Projection', 450, 50, 
+    { isExposedPort: true, portName: 'year1' }, ['value'], []);
+  const year3Out = node('OUTPUT', '📤 Year 3 Projection', 450, 200, 
+    { isExposedPort: true, portName: 'year3' }, ['value'], []);
+  const year5Out = node('OUTPUT', '📤 Year 5 Projection', 450, 350, 
+    { isExposedPort: true, portName: 'year5' }, ['value'], []);
+
+  const nodes = [baseValueIn, growthRateIn, year1, year3, year5, year1Out, year3Out, year5Out];
+  const edges = [
+    edge(baseValueIn, year1, 0, 0), edge(growthRateIn, year1, 0, 1),
+    edge(baseValueIn, year3, 0, 0), edge(growthRateIn, year3, 0, 1),
+    edge(baseValueIn, year5, 0, 0), edge(growthRateIn, year5, 0, 1),
+    edge(year1, year1Out, 0, 0),
+    edge(year3, year3Out, 0, 0),
+    edge(year5, year5Out, 0, 0),
+  ];
+
+  const g = graph('📦 Growth Projector', 'Projects compound growth over 1, 3, and 5 years', nodes, edges);
+  g.id = 'growth-proj-subgraph';
   return g;
 }
 
@@ -1194,7 +1275,82 @@ export const advancedSampleGenerators = {
   'natcat-risk': () => { idCounter = 2000; return createNatCatRiskModel(); },
   'hierarchical-supply-chain': () => { idCounter = 2500; return createHierarchicalSupplyChain(); },
   'simple-subgraph-demo': () => { idCounter = 2600; return createSimpleSubgraphDemo(); },
+  'three-level-hierarchy': () => { idCounter = 3000; return createThreeLevelHierarchyDemo(); },
 };
+
+// ============================================================================
+// 3-LEVEL HIERARCHY DEMO - Company -> Departments -> Teams -> Calculations
+// ============================================================================
+function createThreeLevelHierarchyDemo(): Graph {
+  // Company-level inputs
+  const totalBudget = node('PARAMETER', '💵 Company Budget', 50, 200, 
+    { value: 1000000, min: 100000, max: 10000000, description: 'Total company budget' }, [], ['value']);
+  
+  // 3 Department subgraphs at root level
+  const salesDept = node('SUBGRAPH', '💼 Sales Department', 300, 50, 
+    { subgraphId: 'dept-sales', nodeCount: 6, description: 'Sales department with 3 teams' }, 
+    ['budget'], ['output']);
+  const engDept = node('SUBGRAPH', '⚙️ Engineering Department', 300, 200, 
+    { subgraphId: 'dept-engineering', nodeCount: 6, description: 'Engineering department with 3 teams' }, 
+    ['budget'], ['output']);
+  const mktDept = node('SUBGRAPH', '📣 Marketing Department', 300, 350, 
+    { subgraphId: 'dept-marketing', nodeCount: 6, description: 'Marketing department with 3 teams' }, 
+    ['budget'], ['output']);
+  
+  // Budget allocation (split evenly for simplicity)
+  const budgetSplit = node('TRANSFORMER', '📊 Budget Allocator', 150, 200, 
+    { expression: '$inputs.total / 3', description: 'Splits budget equally to 3 departments' }, 
+    ['total'], ['perDept']);
+  
+  // Company-level aggregation
+  const companyTotal = node('AGGREGATOR', '∑ Company Output', 550, 200, 
+    { operation: 'sum', expression: '$inputs.sales + $inputs.eng + $inputs.mkt' }, 
+    ['sales', 'eng', 'mkt'], ['total']);
+  
+  // ROI calculation
+  const roi = node('TRANSFORMER', '📈 ROI %', 700, 200, 
+    { expression: '(($inputs.output - $inputs.budget) / $inputs.budget) * 100' }, 
+    ['output', 'budget'], ['roi']);
+  
+  // Outputs
+  const totalOutput = node('OUTPUT', '📤 Total Output', 850, 150, {}, ['value'], []);
+  const roiOutput = node('OUTPUT', '📊 ROI Output', 850, 250, {}, ['value'], []);
+
+  const nodes = [totalBudget, budgetSplit, salesDept, engDept, mktDept, companyTotal, roi, totalOutput, roiOutput];
+  const edges = [
+    edge(totalBudget, budgetSplit, 0, 0),
+    edge(budgetSplit, salesDept, 0, 0),
+    edge(budgetSplit, engDept, 0, 0),
+    edge(budgetSplit, mktDept, 0, 0),
+    edge(salesDept, companyTotal, 0, 0),
+    edge(engDept, companyTotal, 0, 1),
+    edge(mktDept, companyTotal, 0, 2),
+    edge(companyTotal, roi, 0, 0),
+    edge(totalBudget, roi, 0, 1),
+    edge(companyTotal, totalOutput, 0, 0),
+    edge(roi, roiOutput, 0, 0),
+  ];
+
+  const g = graph(
+    '🏢 3-Level Hierarchy Demo',
+    'Company → 3 Departments → 3 Teams each → Flat calculations. Drill down to explore all levels!',
+    nodes, edges
+  );
+
+  g.metadata = {
+    hierarchical: {
+      depth: 3,
+      structure: 'Company -> Departments (3) -> Teams (3 each) -> Calculations',
+      totalSubgraphs: 12, // 3 depts + 9 teams
+    },
+    simulation: {
+      recommended: true,
+      iterations: 100,
+    },
+  };
+  
+  return g;
+}
 
 // Legacy function - generates ALL advanced graphs at once (avoid for performance)
 export function getAdvancedSampleGraphs(): Graph[] {
@@ -1210,6 +1366,7 @@ export function getAdvancedSampleGraphs(): Graph[] {
     createNatCatRiskModel(),
     createHierarchicalSupplyChain(),
     createSimpleSubgraphDemo(),
+    createThreeLevelHierarchyDemo(),
   ];
 }
 
@@ -1224,4 +1381,5 @@ export const advancedSampleDescriptions = [
   { name: 'NatCat Portfolio Risk & Pricing Model', description: 'Catastrophe risk with multi-region exposure, stochastic severity, reinsurance, pricing, and capital', complexity: 'Expert', nodeCount: 33 },
   { name: 'Hierarchical Supply Chain with Feedback', description: '🆕 SubGraph hierarchy + PID feedback loops + convergence detection', complexity: 'Expert', nodeCount: 23 },
   { name: '🆕 Simple Subgraph Demo', description: '📦 Easy intro to subgraphs, feedback loops, and hierarchical modeling', complexity: 'Intermediate', nodeCount: 11 },
+  { name: '🏢 3-Level Hierarchy Demo', description: '📦 Company → Departments → Teams → Calculations (12 nested subgraphs)', complexity: 'Advanced', nodeCount: 9 },
 ];

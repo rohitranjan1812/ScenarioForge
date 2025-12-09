@@ -60,6 +60,7 @@ interface GraphState {
   
   // Edge operations
   addEdge: (input: CreateEdgeInput) => Promise<EdgeDefinition>;
+  updateEdge: (edgeId: string, updates: Partial<EdgeDefinition>) => Promise<void>;
   deleteEdge: (edgeId: string) => Promise<void>;
   selectEdge: (edgeId: string | null) => void;
   
@@ -319,6 +320,27 @@ export const useGraphStore = create<GraphState>()(
           currentGraph: updatedGraph,
           graphs: graphs.map(g => g.id === currentGraph.id ? updatedGraph : g),
           selectedEdgeId: selectedEdgeId === edgeId ? null : selectedEdgeId,
+        });
+      },
+      
+      updateEdge: async (edgeId: string, updates: Partial<EdgeDefinition>) => {
+        const { currentGraph, graphs } = get();
+        if (!currentGraph) throw new Error('No graph selected');
+        
+        const now = new Date();
+        const updatedGraph: Graph = {
+          ...currentGraph,
+          edges: currentGraph.edges.map((e) =>
+            e.id === edgeId 
+              ? { ...e, ...updates, updatedAt: now } 
+              : e
+          ),
+          updatedAt: now,
+        };
+        
+        set({
+          currentGraph: updatedGraph,
+          graphs: graphs.map(g => g.id === currentGraph.id ? updatedGraph : g),
         });
       },
       

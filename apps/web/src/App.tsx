@@ -8,6 +8,7 @@ import { GlobalParamsPanel } from './components/panels/GlobalParamsPanel';
 import { GraphSelector } from './components/panels/GraphSelector';
 import { FeedbackLoopsPanel } from './components/panels/FeedbackLoopsPanel';
 import { HierarchyPanel } from './components/panels/HierarchyPanel';
+import { SubgraphTutorial } from './components/panels/SubgraphTutorial';
 import { useGraphStore } from './stores/graphStore';
 import 'reactflow/dist/style.css';
 
@@ -166,6 +167,9 @@ export default function App() {
         {activePanel === 'hierarchy' && <HierarchyPanel />}
         {activePanel === 'feedbackLoops' && <FeedbackLoopsPanel />}
       </div>
+      
+      {/* Floating Tutorial */}
+      <SubgraphTutorial />
     </div>
   );
 }

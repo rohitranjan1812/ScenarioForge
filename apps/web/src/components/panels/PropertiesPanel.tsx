@@ -1,9 +1,24 @@
 // Properties Panel - Edit selected node/edge properties (Dark Theme)
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useGraphStore } from '../../stores/graphStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import { NestedDataEditor } from '../editors/NestedDataEditor';
 import { ExpressionEditor } from '../editors/ExpressionEditor';
-import type { NodeDefinition, Port, DistributionConfig } from '@scenarioforge/core';
+import { getAdvancedNodeEditor, GenericAdvancedEditor } from '../editors/AdvancedNodeEditors';
+import type { NodeDefinition, EdgeDefinition, Port, DistributionConfig } from '@scenarioforge/core';
+
+// Advanced node types that have specialized editors
+const advancedNodeTypes = new Set([
+  'MESH', 'ELEMENT', 'BOUNDARY_CONDITION', 'FIELD',
+  'INTEGRATOR', 'DELAY_LINE', 'STATE_MACHINE', 'EVENT_QUEUE',
+  'AGENT', 'STRATEGY', 'PAYOFF_MATRIX', 'EQUILIBRIUM_FINDER', 'POPULATION',
+  'OBJECTIVE', 'SOLVER', 'OPTIMIZER',
+  'MARKOV_CHAIN', 'RANDOM_PROCESS', 'MONTE_CARLO_ESTIMATOR',
+  'FILTER', 'CONVOLUTION', 'FFT',
+  'BUFFER', 'ACCUMULATOR', 'LOOKUP_TABLE', 'HISTORY',
+  'PID_CONTROLLER', 'MPC_CONTROLLER', 'BANG_BANG',
+  'MATRIX_OP', 'LINEAR_SYSTEM', 'EIGENVALUE', 'NONLINEAR_SYSTEM'
+]);
 
 const distributionTypes = [
   'normal', 'uniform', 'triangular', 'lognormal', 'exponential', 'beta', 'gamma', 'poisson', 'binomial'
@@ -377,6 +392,23 @@ function NodeEditor({ node }: { node: NodeDefinition }) {
         </div>
       )}
       
+      {/* Advanced Node Editors */}
+      {advancedNodeTypes.has(node.type) && (
+        <div className="border-t border-gray-700 pt-4">
+          <h4 className="text-xs font-semibold text-purple-400 mb-3 flex items-center gap-2">
+            <span>⚡</span>
+            <span>Advanced Configuration</span>
+          </h4>
+          {(() => {
+            const AdvancedEditor = getAdvancedNodeEditor(node.type);
+            if (AdvancedEditor) {
+              return <AdvancedEditor data={localData} onChange={handleUpdateData} />;
+            }
+            return <GenericAdvancedEditor data={localData} onChange={handleUpdateData} />;
+          })()}
+        </div>
+      )}
+      
       {/* Custom Data Fields Section - Hierarchical editor for node.data */}
       {(() => {
         // List of known fields that are displayed in type-specific sections
@@ -504,17 +536,23 @@ function NodeEditor({ node }: { node: NodeDefinition }) {
 }
 
 export function PropertiesPanel() {
-  const { currentGraph, selectedNodeId, selectedEdgeId, deleteEdge } = useGraphStore();
+  const { currentGraph, selectedNodeId, selectedEdgeId } = useGraphStore();
+  const { getCurrentGraph } = useNavigationStore();
+  
+  // Get the currently displayed graph (could be a subgraph if drilled down)
+  const displayGraph = useMemo(() => {
+    return getCurrentGraph() ?? currentGraph;
+  }, [getCurrentGraph, currentGraph]);
   
   const selectedNode = selectedNodeId
-    ? currentGraph?.nodes.find((n) => n.id === selectedNodeId)
+    ? displayGraph?.nodes.find((n) => n.id === selectedNodeId)
     : null;
     
   const selectedEdge = selectedEdgeId
-    ? currentGraph?.edges.find((e) => e.id === selectedEdgeId)
+    ? displayGraph?.edges.find((e) => e.id === selectedEdgeId)
     : null;
   
-  if (!currentGraph) {
+  if (!displayGraph) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 text-sm p-4">
         No graph selected
@@ -538,11 +576,11 @@ export function PropertiesPanel() {
           <div className="text-sm space-y-1 text-gray-300">
             <div className="flex justify-between">
               <span className="text-gray-500">Nodes:</span>
-              <span>{currentGraph.nodes.length}</span>
+              <span>{displayGraph.nodes.length}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Edges:</span>
-              <span>{currentGraph.edges.length}</span>
+              <span>{displayGraph.edges.length}</span>
             </div>
           </div>
         </div>
@@ -552,30 +590,11 @@ export function PropertiesPanel() {
   
   if (selectedEdge) {
     return (
-      <div className="h-full p-4">
+      <div className="h-full p-4 overflow-y-auto">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
           Edge Properties
         </h2>
-        <div className="space-y-3 text-sm">
-          <div>
-            <span className="text-gray-500">From:</span>{' '}
-            <span className="font-mono text-gray-200">
-              {currentGraph.nodes.find((n) => n.id === selectedEdge.sourceNodeId)?.name ?? selectedEdge.sourceNodeId}
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500">To:</span>{' '}
-            <span className="font-mono text-gray-200">
-              {currentGraph.nodes.find((n) => n.id === selectedEdge.targetNodeId)?.name ?? selectedEdge.targetNodeId}
-            </span>
-          </div>
-          <button
-            onClick={() => deleteEdge(selectedEdge.id)}
-            className="w-full px-4 py-2 bg-red-900 text-red-200 rounded-md hover:bg-red-800 transition-colors"
-          >
-            Delete Edge
-          </button>
-        </div>
+        <EdgeEditor edge={selectedEdge} nodes={displayGraph.nodes} />
       </div>
     );
   }
@@ -588,4 +607,588 @@ export function PropertiesPanel() {
       {selectedNode && <NodeEditor node={selectedNode} />}
     </div>
   );
+}
+
+// ============================================
+// Edge Editor Component
+// ============================================
+
+// All edge types including advanced types
+const EDGE_TYPES = [
+  // Basic
+  { value: 'DATA_FLOW', label: 'Data Flow', category: 'Basic', description: 'Standard data flow between nodes' },
+  { value: 'DEPENDENCY', label: 'Dependency', category: 'Basic', description: 'Execution dependency' },
+  { value: 'TEMPORAL', label: 'Temporal', category: 'Basic', description: 'Time-based connection' },
+  
+  // Streaming
+  { value: 'STREAMING', label: 'Streaming', category: 'Data Flow', description: 'Continuous data stream' },
+  { value: 'BATCHED', label: 'Batched', category: 'Data Flow', description: 'Batched data transfer' },
+  
+  // Temporal
+  { value: 'DELAYED', label: 'Delayed', category: 'Temporal', description: 'Fixed time delay' },
+  { value: 'VARIABLE_DELAY', label: 'Variable Delay', category: 'Temporal', description: 'State-dependent delay' },
+  { value: 'TRANSPORT_DELAY', label: 'Transport Delay', category: 'Temporal', description: 'Distance-based delay' },
+  
+  // Feedback
+  { value: 'FEEDBACK', label: 'Feedback', category: 'Control', description: 'Explicit feedback loop' },
+  { value: 'IMPLICIT_FEEDBACK', label: 'Implicit Feedback', category: 'Control', description: 'Algebraic loop' },
+  
+  // Conditional
+  { value: 'CONDITIONAL', label: 'Conditional', category: 'Routing', description: 'Condition-based activation' },
+  { value: 'PROBABILISTIC', label: 'Probabilistic', category: 'Routing', description: 'Stochastic routing' },
+  { value: 'PRIORITY', label: 'Priority', category: 'Routing', description: 'Priority-based routing' },
+  
+  // Synchronization
+  { value: 'SYNC_BARRIER', label: 'Sync Barrier', category: 'Sync', description: 'Wait for multiple inputs' },
+  { value: 'MERGE', label: 'Merge', category: 'Sync', description: 'Merge multiple streams' },
+  { value: 'SPLIT', label: 'Split', category: 'Sync', description: 'Split to multiple outputs' },
+  
+  // Spatial
+  { value: 'NEIGHBOR', label: 'Neighbor', category: 'Spatial', description: 'Spatial adjacency (mesh/grid)' },
+  { value: 'COUPLING', label: 'Coupling', category: 'Spatial', description: 'Physical coupling (FEM)' },
+  
+  // Agent
+  { value: 'MESSAGE', label: 'Message', category: 'Agent', description: 'Agent message passing' },
+  { value: 'OBSERVATION', label: 'Observation', category: 'Agent', description: 'Agent observation' },
+  { value: 'INFLUENCE', label: 'Influence', category: 'Agent', description: 'Social influence' },
+];
+
+const EDGE_CATEGORIES = ['Basic', 'Data Flow', 'Temporal', 'Control', 'Routing', 'Sync', 'Spatial', 'Agent'];
+
+interface EdgeEditorProps {
+  edge: EdgeDefinition;
+  nodes: NodeDefinition[];
+}
+
+function EdgeEditor({ edge, nodes }: EdgeEditorProps) {
+  const { updateEdge, deleteEdge } = useGraphStore();
+  const [localData, setLocalData] = React.useState<Record<string, unknown>>(edge.data ?? {});
+  
+  const sourceNode = nodes.find(n => n.id === edge.sourceNodeId);
+  const targetNode = nodes.find(n => n.id === edge.targetNodeId);
+  
+  const handleTypeChange = (newType: string) => {
+    updateEdge(edge.id, { 
+      type: newType as EdgeDefinition['type'],
+      // Initialize type-specific data
+      data: getDefaultDataForType(newType)
+    });
+  };
+  
+  const handleDataChange = (key: string, value: unknown) => {
+    const newData = { ...localData, [key]: value };
+    setLocalData(newData);
+    updateEdge(edge.id, { data: newData });
+  };
+  
+  const handlePropertyChange = (key: keyof EdgeDefinition, value: unknown) => {
+    updateEdge(edge.id, { [key]: value });
+  };
+  
+  // Sync local data when edge changes
+  React.useEffect(() => {
+    setLocalData(edge.data ?? {});
+  }, [edge.id, edge.data]);
+  
+  return (
+    <div className="space-y-4 text-sm">
+      {/* Connection Info */}
+      <div className="space-y-2 p-3 bg-gray-800 rounded-md">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-xs uppercase">From</span>
+          <span className="font-mono text-blue-300 truncate flex-1">
+            {sourceNode?.name ?? edge.sourceNodeId}
+          </span>
+        </div>
+        <div className="flex items-center justify-center text-gray-500">↓</div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-xs uppercase">To</span>
+          <span className="font-mono text-green-300 truncate flex-1">
+            {targetNode?.name ?? edge.targetNodeId}
+          </span>
+        </div>
+      </div>
+      
+      {/* Edge Type Selector */}
+      <div>
+        <label className="block text-xs text-gray-400 uppercase mb-1">Edge Type</label>
+        <select
+          value={edge.type}
+          onChange={(e) => handleTypeChange(e.target.value)}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          {EDGE_CATEGORIES.map(category => (
+            <optgroup key={category} label={category}>
+              {EDGE_TYPES
+                .filter(t => t.category === category)
+                .map(type => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))
+              }
+            </optgroup>
+          ))}
+        </select>
+        <p className="text-xs text-gray-500 mt-1">
+          {EDGE_TYPES.find(t => t.value === edge.type)?.description ?? 'Select an edge type'}
+        </p>
+      </div>
+      
+      {/* Label */}
+      <div>
+        <label className="block text-xs text-gray-400 uppercase mb-1">Label</label>
+        <input
+          type="text"
+          value={edge.label ?? ''}
+          onChange={(e) => handlePropertyChange('label', e.target.value || undefined)}
+          placeholder="Optional edge label"
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      
+      {/* Common Properties */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-gray-400 uppercase mb-1">Weight</label>
+          <input
+            type="number"
+            value={edge.weight ?? ''}
+            onChange={(e) => handlePropertyChange('weight', e.target.value ? parseFloat(e.target.value) : undefined)}
+            placeholder="1.0"
+            step="0.1"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 uppercase mb-1">Delay</label>
+          <input
+            type="number"
+            value={edge.delay ?? ''}
+            onChange={(e) => handlePropertyChange('delay', e.target.value ? parseInt(e.target.value) : undefined)}
+            placeholder="0"
+            min="0"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+      
+      {/* Type-Specific Editors */}
+      {renderTypeSpecificEditor(edge.type, localData, handleDataChange)}
+      
+      {/* Condition (for conditional edges) */}
+      {(edge.type === 'CONDITIONAL' || edge.type === 'PROBABILISTIC') && (
+        <div>
+          <label className="block text-xs text-gray-400 uppercase mb-1">Condition Expression</label>
+          <textarea
+            value={edge.condition ?? ''}
+            onChange={(e) => handlePropertyChange('condition', e.target.value || undefined)}
+            placeholder="$source.value > 0"
+            rows={2}
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white font-mono text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      )}
+      
+      {/* Transform Function */}
+      <div>
+        <label className="block text-xs text-gray-400 uppercase mb-1">Transform Function</label>
+        <textarea
+          value={edge.transformFunction ?? ''}
+          onChange={(e) => handlePropertyChange('transformFunction', e.target.value || undefined)}
+          placeholder="$value * 2"
+          rows={2}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-white font-mono text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
+        />
+        <p className="text-xs text-gray-500 mt-1">Transform data as it flows through this edge</p>
+      </div>
+      
+      {/* Visual Options */}
+      <div className="pt-2 border-t border-gray-700">
+        <h3 className="text-xs text-gray-400 uppercase mb-2">Visual Options</h3>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={edge.animated ?? false}
+            onChange={(e) => handlePropertyChange('animated', e.target.checked)}
+            className="w-4 h-4 rounded bg-gray-800 border-gray-600 text-blue-500 focus:ring-blue-500"
+          />
+          <span>Animated</span>
+        </label>
+      </div>
+      
+      {/* Delete Button */}
+      <div className="pt-3">
+        <button
+          onClick={() => deleteEdge(edge.id)}
+          className="w-full px-4 py-2 bg-red-900 text-red-200 rounded-md hover:bg-red-800 transition-colors"
+        >
+          Delete Edge
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Get default data structure for edge type
+function getDefaultDataForType(type: string): Record<string, unknown> {
+  switch (type) {
+    case 'STREAMING':
+      return { bufferSize: 100, backpressure: true };
+    case 'BATCHED':
+      return { batchSize: 10, flushInterval: 1000 };
+    case 'DELAYED':
+      return { delaySteps: 1, delayUnit: 'steps' };
+    case 'VARIABLE_DELAY':
+      return { minDelay: 0, maxDelay: 10, delayExpression: '$distance' };
+    case 'FEEDBACK':
+      return { feedbackGain: 1.0, dampingFactor: 0.9 };
+    case 'PROBABILISTIC':
+      return { probability: 0.5 };
+    case 'PRIORITY':
+      return { priority: 1 };
+    case 'SYNC_BARRIER':
+      return { requiredInputs: 2, timeout: 1000 };
+    case 'MERGE':
+      return { strategy: 'concat' };
+    case 'NEIGHBOR':
+      return { direction: 'all', distance: 1 };
+    case 'COUPLING':
+      return { couplingStrength: 1.0, couplingType: 'linear' };
+    case 'MESSAGE':
+      return { messageType: 'data', async: false };
+    default:
+      return {};
+  }
+}
+
+// Render type-specific editor fields
+function renderTypeSpecificEditor(
+  type: string,
+  data: Record<string, unknown>,
+  onChange: (key: string, value: unknown) => void
+): React.ReactNode {
+  switch (type) {
+    case 'STREAMING':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Streaming Options</h4>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Buffer Size</label>
+            <input
+              type="number"
+              value={(data.bufferSize as number) ?? 100}
+              onChange={(e) => onChange('bufferSize', parseInt(e.target.value) || 100)}
+              className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+            />
+          </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={(data.backpressure as boolean) ?? true}
+              onChange={(e) => onChange('backpressure', e.target.checked)}
+              className="w-4 h-4 rounded bg-gray-700 border-gray-600"
+            />
+            <span className="text-sm">Enable backpressure</span>
+          </label>
+        </div>
+      );
+      
+    case 'BATCHED':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Batch Options</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Batch Size</label>
+              <input
+                type="number"
+                value={(data.batchSize as number) ?? 10}
+                onChange={(e) => onChange('batchSize', parseInt(e.target.value) || 10)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Flush (ms)</label>
+              <input
+                type="number"
+                value={(data.flushInterval as number) ?? 1000}
+                onChange={(e) => onChange('flushInterval', parseInt(e.target.value) || 1000)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      );
+      
+    case 'DELAYED':
+    case 'VARIABLE_DELAY':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Delay Options</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                {type === 'VARIABLE_DELAY' ? 'Min Delay' : 'Delay Steps'}
+              </label>
+              <input
+                type="number"
+                value={(data[type === 'VARIABLE_DELAY' ? 'minDelay' : 'delaySteps'] as number) ?? 1}
+                onChange={(e) => onChange(
+                  type === 'VARIABLE_DELAY' ? 'minDelay' : 'delaySteps', 
+                  parseInt(e.target.value) || 1
+                )}
+                min="0"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+            {type === 'VARIABLE_DELAY' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Max Delay</label>
+                <input
+                  type="number"
+                  value={(data.maxDelay as number) ?? 10}
+                  onChange={(e) => onChange('maxDelay', parseInt(e.target.value) || 10)}
+                  min="0"
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+                />
+              </div>
+            )}
+          </div>
+          {type === 'VARIABLE_DELAY' && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Delay Expression</label>
+              <input
+                type="text"
+                value={(data.delayExpression as string) ?? '$distance'}
+                onChange={(e) => onChange('delayExpression', e.target.value)}
+                placeholder="$distance"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white font-mono text-sm"
+              />
+            </div>
+          )}
+        </div>
+      );
+      
+    case 'FEEDBACK':
+    case 'IMPLICIT_FEEDBACK':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Feedback Options</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Gain</label>
+              <input
+                type="number"
+                value={(data.feedbackGain as number) ?? 1.0}
+                onChange={(e) => onChange('feedbackGain', parseFloat(e.target.value) || 1.0)}
+                step="0.1"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Damping</label>
+              <input
+                type="number"
+                value={(data.dampingFactor as number) ?? 0.9}
+                onChange={(e) => onChange('dampingFactor', parseFloat(e.target.value) || 0.9)}
+                step="0.05"
+                min="0"
+                max="1"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      );
+      
+    case 'PROBABILISTIC':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Probability</h4>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              Activation Probability (0-1)
+            </label>
+            <input
+              type="number"
+              value={(data.probability as number) ?? 0.5}
+              onChange={(e) => onChange('probability', Math.max(0, Math.min(1, parseFloat(e.target.value) || 0.5)))}
+              step="0.1"
+              min="0"
+              max="1"
+              className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+            />
+          </div>
+        </div>
+      );
+      
+    case 'PRIORITY':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Priority</h4>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Priority Level</label>
+            <input
+              type="number"
+              value={(data.priority as number) ?? 1}
+              onChange={(e) => onChange('priority', parseInt(e.target.value) || 1)}
+              min="1"
+              className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">Higher = more priority</p>
+          </div>
+        </div>
+      );
+      
+    case 'SYNC_BARRIER':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Sync Barrier</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Required Inputs</label>
+              <input
+                type="number"
+                value={(data.requiredInputs as number) ?? 2}
+                onChange={(e) => onChange('requiredInputs', parseInt(e.target.value) || 2)}
+                min="1"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Timeout (ms)</label>
+              <input
+                type="number"
+                value={(data.timeout as number) ?? 1000}
+                onChange={(e) => onChange('timeout', parseInt(e.target.value) || 1000)}
+                min="0"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      );
+      
+    case 'MERGE':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Merge Strategy</h4>
+          <select
+            value={(data.strategy as string) ?? 'concat'}
+            onChange={(e) => onChange('strategy', e.target.value)}
+            className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+          >
+            <option value="concat">Concatenate</option>
+            <option value="sum">Sum</option>
+            <option value="average">Average</option>
+            <option value="min">Minimum</option>
+            <option value="max">Maximum</option>
+            <option value="first">First Value</option>
+            <option value="last">Last Value</option>
+          </select>
+        </div>
+      );
+      
+    case 'NEIGHBOR':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Neighbor Options</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Direction</label>
+              <select
+                value={(data.direction as string) ?? 'all'}
+                onChange={(e) => onChange('direction', e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              >
+                <option value="all">All</option>
+                <option value="north">North</option>
+                <option value="south">South</option>
+                <option value="east">East</option>
+                <option value="west">West</option>
+                <option value="cardinal">Cardinal (4)</option>
+                <option value="diagonal">Diagonal (4)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Distance</label>
+              <input
+                type="number"
+                value={(data.distance as number) ?? 1}
+                onChange={(e) => onChange('distance', parseInt(e.target.value) || 1)}
+                min="1"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      );
+      
+    case 'COUPLING':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Coupling Options</h4>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Strength</label>
+              <input
+                type="number"
+                value={(data.couplingStrength as number) ?? 1.0}
+                onChange={(e) => onChange('couplingStrength', parseFloat(e.target.value) || 1.0)}
+                step="0.1"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Type</label>
+              <select
+                value={(data.couplingType as string) ?? 'linear'}
+                onChange={(e) => onChange('couplingType', e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+              >
+                <option value="linear">Linear</option>
+                <option value="nonlinear">Nonlinear</option>
+                <option value="spring">Spring</option>
+                <option value="damper">Damper</option>
+                <option value="thermal">Thermal</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      );
+      
+    case 'MESSAGE':
+      return (
+        <div className="space-y-3 p-3 bg-gray-800/50 rounded-md">
+          <h4 className="text-xs text-gray-400 uppercase">Message Options</h4>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Message Type</label>
+            <select
+              value={(data.messageType as string) ?? 'data'}
+              onChange={(e) => onChange('messageType', e.target.value)}
+              className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-white text-sm"
+            >
+              <option value="data">Data</option>
+              <option value="signal">Signal</option>
+              <option value="request">Request</option>
+              <option value="response">Response</option>
+              <option value="broadcast">Broadcast</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={(data.async as boolean) ?? false}
+              onChange={(e) => onChange('async', e.target.checked)}
+              className="w-4 h-4 rounded bg-gray-700 border-gray-600"
+            />
+            <span className="text-sm">Asynchronous</span>
+          </label>
+        </div>
+      );
+      
+    default:
+      return null;
+  }
 }

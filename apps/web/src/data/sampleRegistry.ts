@@ -41,8 +41,9 @@ export const sampleCatalog: SampleInfo[] = [
   { id: 'natcat-risk', name: 'NatCat Portfolio Risk & Pricing Model', description: 'Catastrophe risk with multi-region exposure, stochastic severity, reinsurance, pricing, and capital', complexity: 'Expert', nodeCount: 33, category: 'Risk' },
   { id: 'hierarchical-supply-chain', name: '🆕 Hierarchical Supply Chain with Feedback', description: 'SubGraph hierarchy + PID feedback loops + convergence detection', complexity: 'Expert', nodeCount: 23, category: 'Demo' },
   
-  // NEW: Simple Subgraph Demo - first in list for easy access
-  { id: 'simple-subgraph-demo', name: '⭐ Simple Subgraph Demo', description: '📦 Easy intro to subgraphs, feedback loops, and hierarchical modeling', complexity: 'Intermediate', nodeCount: 11, category: 'Demo' },
+  // Subgraph Demos
+  { id: 'simple-subgraph-demo', name: '⭐ Simple Subgraph Demo', description: '📦 Easy intro to subgraphs (2 levels)', complexity: 'Intermediate', nodeCount: 11, category: 'Demo' },
+  { id: 'three-level-hierarchy', name: '🏢 3-Level Hierarchy Demo', description: '📦 Company → Depts → Teams (12 nested subgraphs!)', complexity: 'Advanced', nodeCount: 9, category: 'Demo' },
 ];
 
 // Get a single sample graph by ID (lazy - generates on demand)

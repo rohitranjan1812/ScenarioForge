@@ -59,7 +59,8 @@ export interface PortDefinition {
 // Node System
 // ============================================
 
-export type NodeType = 
+// Base node types
+export type BaseNodeType = 
   | 'DATA_SOURCE'
   | 'TRANSFORMER'
   | 'DECISION'
@@ -70,6 +71,95 @@ export type NodeType =
   | 'PARAMETER'
   | 'CONSTRAINT'
   | 'CONSTANT';
+
+// Advanced node types for complex simulations
+export type AdvancedNodeType =
+  // Spatial/FEM
+  | 'MESH'
+  | 'ELEMENT'
+  | 'BOUNDARY_CONDITION'
+  | 'FIELD'
+  | 'SPATIAL_FIELD'
+  | 'BOUNDARY'
+  | 'GRADIENT'
+  | 'LAPLACIAN'
+  
+  // Temporal/Dynamic
+  | 'INTEGRATOR'
+  | 'DIFFERENTIATOR'
+  | 'DELAY'
+  | 'DELAY_LINE'
+  | 'STATE_MACHINE'
+  | 'EVENT_QUEUE'
+  | 'SCHEDULER'
+  
+  // Game Theory
+  | 'AGENT'
+  | 'STRATEGY'
+  | 'PAYOFF_MATRIX'
+  | 'EQUILIBRIUM_FINDER'
+  | 'NASH_EQUILIBRIUM'
+  | 'AUCTION'
+  | 'MECHANISM'
+  | 'POPULATION'
+  
+  // Optimization
+  | 'OBJECTIVE'
+  | 'OPTIMIZER'
+  | 'SOLVER'
+  | 'FEASIBILITY'
+  | 'SENSITIVITY'
+  
+  // Stochastic
+  | 'MARKOV_CHAIN'
+  | 'RANDOM_PROCESS'
+  | 'MONTE_CARLO'
+  | 'MONTE_CARLO_ESTIMATOR'
+  | 'BAYESIAN'
+  | 'SAMPLER'
+  
+  // Signal Processing
+  | 'FILTER'
+  | 'CONVOLUTION'
+  | 'FFT'
+  | 'IFFT'
+  | 'WINDOW'
+  | 'RESAMPLER'
+  
+  // Memory/State
+  | 'BUFFER'
+  | 'ACCUMULATOR'
+  | 'LOOKUP_TABLE'
+  | 'HISTORY'
+  | 'CACHE'
+  | 'QUEUE'
+  | 'STACK'
+  
+  // Control Systems
+  | 'PID_CONTROLLER'
+  | 'MPC_CONTROLLER'
+  | 'BANG_BANG'
+  | 'STATE_OBSERVER'
+  | 'KALMAN_FILTER'
+  | 'LQR'
+  
+  // Algebraic
+  | 'MATRIX_OP'
+  | 'LINEAR_SYSTEM'
+  | 'EIGENVALUE'
+  | 'EIGEN'
+  | 'TENSOR_OP'
+  | 'NONLINEAR_SYSTEM'
+  | 'ODE_SYSTEM'
+  
+  // Iterative
+  | 'ITERATOR'
+  | 'CONVERGENCE_CHECK'
+  | 'FIXED_POINT'
+  | 'RELAXATION';
+
+// Combined node type
+export type NodeType = BaseNodeType | AdvancedNodeType;
 
 export interface NodeDefinition {
   id: string;
@@ -132,12 +222,48 @@ export interface UpdateNodeInput {
 // Edge System
 // ============================================
 
-export type EdgeType = 
+// Base edge types
+export type BaseEdgeType = 
   | 'DATA_FLOW'
   | 'DEPENDENCY'
   | 'CONDITIONAL'
   | 'FEEDBACK'
   | 'TEMPORAL';
+
+// Advanced edge types for complex interactions
+export type AdvancedEdgeType =
+  // Data flow variants
+  | 'STREAMING'
+  | 'BATCHED'
+  
+  // Temporal
+  | 'DELAYED'
+  | 'VARIABLE_DELAY'
+  | 'TRANSPORT_DELAY'
+  
+  // Feedback
+  | 'IMPLICIT_FEEDBACK'
+  
+  // Conditional/Routing
+  | 'PROBABILISTIC'
+  | 'PRIORITY'
+  
+  // Synchronization
+  | 'SYNC_BARRIER'
+  | 'MERGE'
+  | 'SPLIT'
+  
+  // Spatial
+  | 'NEIGHBOR'
+  | 'COUPLING'
+  
+  // Agent
+  | 'MESSAGE'
+  | 'OBSERVATION'
+  | 'INFLUENCE';
+
+// Combined edge type
+export type EdgeType = BaseEdgeType | AdvancedEdgeType;
 
 export interface EdgeStyle {
   strokeWidth?: number;
@@ -478,7 +604,17 @@ export interface ValidationError {
 }
 
 // ============================================
-// Re-export Hierarchical Types
+// Re-export Extended Types
 // ============================================
 
+// Hierarchical graph types (subgraphs, feedback loops, meta-nodes)
 export * from './hierarchical.types.js';
+
+// Advanced node types (FEM, game theory, control systems, etc.)
+export * from './advanced-nodes.types.js';
+
+// Advanced edge types (streaming, delays, hyperedges, etc.)
+export * from './advanced-edges.types.js';
+
+// Execution engine types (multi-paradigm, parallel execution, etc.)
+export * from './execution-engine.types.js';

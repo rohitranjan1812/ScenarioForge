@@ -2,7 +2,9 @@
 // Uses lazy loading to avoid generating all sample graphs at once
 import { useState, useEffect } from 'react';
 import { useGraphStore } from '../../stores/graphStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import { sampleCatalog, getSampleById, type SampleInfo } from '../../data/sampleRegistry';
+import type { Graph } from '@scenarioforge/core';
 
 export function GraphSelector() {
   const {
@@ -16,6 +18,8 @@ export function GraphSelector() {
     deleteGraph,
     importGraphs,
   } = useGraphStore();
+  
+  const { registerSubgraph } = useNavigationStore();
   
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showSamplesDialog, setShowSamplesDialog] = useState(false);
@@ -63,6 +67,13 @@ export function GraphSelector() {
         if (graph) {
           // Import the graph (adds to graphs list)
           importGraphs([graph]);
+          
+          // Register any nested subgraphs for drill-down navigation
+          const nestedGraphs = (graph.metadata?.nestedGraphs as Record<string, Graph>) ?? {};
+          for (const [subgraphId, subgraph] of Object.entries(nestedGraphs)) {
+            console.log('Registering subgraph:', subgraphId);
+            registerSubgraph(subgraphId, subgraph);
+          }
           
           // Find the graph by name since importGraphs may change the ID
           const { graphs: updatedGraphs } = useGraphStore.getState();

@@ -1,4 +1,4 @@
-// Graph Canvas - Main React Flow canvas
+// Graph Canvas - Main React Flow canvas with hierarchical navigation
 import { useCallback, useMemo, useEffect } from 'react';
 import ReactFlow, {
   Background,
@@ -17,8 +17,10 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow';
 import { useGraphStore } from '../../stores/graphStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 import { CustomNode } from '../nodes/CustomNode';
-import type { NodeDefinition, EdgeDefinition, NodeType } from '@scenarioforge/core';
+import { createNestedGraphsForDemo } from '../../data/nestedGraphRegistry';
+import type { NodeDefinition, EdgeDefinition, NodeType, Graph } from '@scenarioforge/core';
 
 // Custom node types
 const nodeTypes = {
@@ -65,17 +67,52 @@ export function GraphCanvas() {
     updateNode,
   } = useGraphStore();
   
+  const {
+    navigationStack,
+    getCurrentGraph,
+    isAtRoot,
+    navigateUp,
+    navigateToLevel,
+    resetNavigation,
+    registerSubgraph,
+  } = useNavigationStore();
+  
   const { screenToFlowPosition } = useReactFlow();
+  
+  // Determine which graph to display - subgraph if navigated, else root
+  const subgraph = getCurrentGraph();
+  const displayGraph: Graph | null = subgraph ?? currentGraph;
+  
+  // Reset navigation and register nested graphs when root graph changes
+  useEffect(() => {
+    if (currentGraph) {
+      resetNavigation(currentGraph);
+      
+      // Auto-register any nested subgraphs from metadata
+      let nestedGraphs = (currentGraph.metadata?.nestedGraphs as Record<string, Graph>) ?? {};
+      
+      // If no nested graphs in metadata, check if this is a known demo sample
+      // and generate them dynamically (handles localStorage persistence case)
+      if (Object.keys(nestedGraphs).length === 0) {
+        nestedGraphs = createNestedGraphsForDemo(currentGraph.name);
+      }
+      
+      for (const [subgraphId, subgraphData] of Object.entries(nestedGraphs)) {
+        console.log('Auto-registering subgraph:', subgraphId);
+        registerSubgraph(subgraphId, subgraphData);
+      }
+    }
+  }, [currentGraph?.id, currentGraph?.name, resetNavigation, registerSubgraph]);
 
   // Convert graph data to React Flow format
   const initialNodes = useMemo(
-    () => (currentGraph?.nodes ?? []).map(toFlowNode),
-    [currentGraph?.id] // Only recalculate when graph changes
+    () => (displayGraph?.nodes ?? []).map(toFlowNode),
+    [displayGraph?.id] // Only recalculate when graph changes
   );
   
   const initialEdges = useMemo(
-    () => (currentGraph?.edges ?? []).map(toFlowEdge),
-    [currentGraph?.id]
+    () => (displayGraph?.edges ?? []).map(toFlowEdge),
+    [displayGraph?.id]
   );
 
   const [nodes, setNodes] = useNodesState(initialNodes);
@@ -83,26 +120,26 @@ export function GraphCanvas() {
 
   // Sync with store when graph changes
   useEffect(() => {
-    if (currentGraph) {
-      setNodes(currentGraph.nodes.map(toFlowNode));
-      setEdges(currentGraph.edges.map(toFlowEdge));
+    if (displayGraph) {
+      setNodes(displayGraph.nodes.map(toFlowNode));
+      setEdges(displayGraph.edges.map(toFlowEdge));
     } else {
       setNodes([]);
       setEdges([]);
     }
-  }, [currentGraph, setNodes, setEdges]);
+  }, [displayGraph, setNodes, setEdges]);
 
   // Handle node changes (position, selection)
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((nds) => applyNodeChanges(changes, nds));
       
-      // Update positions in store
+      // Update positions in store (only for root graph)
       const positionChanges = changes.filter(
         (c) => c.type === 'position' && c.position
       );
       
-      if (positionChanges.length > 0 && currentGraph) {
+      if (positionChanges.length > 0 && currentGraph && isAtRoot()) {
         for (const change of positionChanges) {
           if (change.type === 'position' && change.position) {
             updateNode(change.id, { position: change.position });
@@ -110,7 +147,7 @@ export function GraphCanvas() {
         }
       }
     },
-    [setNodes, currentGraph, updateNode]
+    [setNodes, currentGraph, updateNode, isAtRoot]
   );
 
   // Handle edge changes
@@ -244,11 +281,47 @@ export function GraphCanvas() {
 
   return (
     <div 
-      className="h-full w-full"
+      className="h-full w-full flex flex-col"
       onDrop={onDrop}
       onDragOver={onDragOver}
     >
-      <ReactFlow
+      {/* Breadcrumb Navigation Bar - shows when inside a subgraph */}
+      {!isAtRoot() && (
+        <div className="bg-indigo-900 border-b border-indigo-700 px-4 py-2 flex items-center gap-2">
+          <button
+            onClick={navigateUp}
+            className="px-2 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded text-sm flex items-center gap-1"
+          >
+            <span>⬆️</span>
+            <span>Back to Parent</span>
+          </button>
+          
+          <div className="flex items-center gap-1 ml-4">
+            {navigationStack.map((level, index) => (
+              <div key={level.graphId} className="flex items-center">
+                {index > 0 && <span className="text-indigo-400 mx-1">›</span>}
+                <button
+                  onClick={() => navigateToLevel(index)}
+                  className={`px-2 py-1 rounded text-sm ${
+                    index === navigationStack.length - 1
+                      ? 'bg-indigo-600 text-white font-medium'
+                      : 'text-indigo-300 hover:text-white hover:bg-indigo-700'
+                  }`}
+                >
+                  {index === 0 ? '🏠' : '📦'} {level.graphName}
+                </button>
+              </div>
+            ))}
+          </div>
+          
+          <div className="ml-auto text-xs text-indigo-300">
+            Depth: {navigationStack.length - 1} | Viewing subgraph
+          </div>
+        </div>
+      )}
+      
+      <div className="flex-1">
+        <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
@@ -287,6 +360,7 @@ export function GraphCanvas() {
           }}
         />
       </ReactFlow>
+      </div>
     </div>
   );
 }
