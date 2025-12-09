@@ -476,3 +476,9 @@ export interface ValidationError {
   message: string;
   code: string;
 }
+
+// ============================================
+// Re-export Hierarchical Types
+// ============================================
+
+export * from './hierarchical.types.js';

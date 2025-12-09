@@ -813,6 +813,237 @@ function createNatCatRiskModel(): Graph {
   return g;
 }
 
+// ============================================================================
+// 9. HIERARCHICAL SUPPLY CHAIN WITH FEEDBACK LOOPS
+// Demonstrates: SubGraph nodes, Feedback loops, PID control, Multi-level hierarchy
+// ============================================================================
+function createHierarchicalSupplyChain(): Graph {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LEVEL 0: Top-level Supply Chain Overview
+  // This represents a simplified view where complex subsystems are shown as 
+  // single nodes. In a full implementation, these would be SUBGRAPH nodes
+  // that can be drilled into.
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  // === DEMAND FORECASTING SUBSYSTEM (would be a SubGraph) ===
+  const demandHistory = node('DATA_SOURCE', '📊 Historical Demand', 50, 50,
+    { description: 'Past 12 months of sales data', value: 1000 }, [], ['demand']);
+  
+  const seasonalFactor = node('DISTRIBUTION', '📅 Seasonal Factor', 50, 170,
+    { distributionType: 'normal', mean: 1.0, stddev: 0.15, 
+      description: 'Seasonal adjustment multiplier' }, [], ['factor']);
+  
+  const marketTrend = node('PARAMETER', '📈 Market Trend', 50, 290,
+    { value: 1.05, min: 0.8, max: 1.3, 
+      description: 'Year-over-year growth trend' }, [], ['trend']);
+  
+  const demandForecast = node('TRANSFORMER', '🔮 Demand Forecast', 250, 170,
+    { expression: '$inputs.base * $inputs.season * $inputs.trend',
+      description: 'Forecasted demand = Base × Seasonal × Trend' },
+    ['base', 'season', 'trend'], ['forecast']);
+  
+  // === INVENTORY MANAGEMENT (SubGraph with Feedback) ===
+  const currentInventory = node('PARAMETER', '📦 Current Inventory', 500, 50,
+    { value: 500, min: 0, max: 5000,
+      description: 'Current stock level - RECEIVES FEEDBACK' }, [], ['level']);
+  
+  const safetyStock = node('CONSTANT', '⚠️ Safety Stock', 500, 170,
+    { value: 200, description: 'Minimum inventory buffer' }, [], ['safety']);
+  
+  const reorderPoint = node('TRANSFORMER', '🎯 Reorder Point', 500, 290,
+    { expression: '$inputs.forecast * 0.5 + $inputs.safety',
+      description: 'When to trigger new order' },
+    ['forecast', 'safety'], ['reorder']);
+  
+  // === FEEDBACK LOOP VISUALIZATION ===
+  // This represents a PID-like control loop for inventory management
+  const inventoryError = node('TRANSFORMER', '📉 Inventory Gap', 750, 120,
+    { expression: '$inputs.target - $inputs.current',
+      description: 'FEEDBACK INPUT: Difference between target and actual inventory' },
+    ['target', 'current'], ['error']);
+  
+  // PID Controller components (simplified)
+  const proportionalTerm = node('TRANSFORMER', '🅿️ Proportional', 750, 250,
+    { expression: '$inputs.error * 0.5',
+      description: 'Kp × error - immediate correction' },
+    ['error'], ['p_term']);
+  
+  const integralTerm = node('TRANSFORMER', '🔄 Integral (Cumulative)', 950, 250,
+    { expression: '$inputs.error * 0.1 * $iteration',
+      description: 'Ki × ∫error - accumulated correction over iterations' },
+    ['error'], ['i_term']);
+  
+  const derivativeTerm = node('TRANSFORMER', '📐 Derivative (Rate)', 750, 380,
+    { expression: '$inputs.error * 0.05',
+      description: 'Kd × d(error)/dt - dampens oscillation' },
+    ['error'], ['d_term']);
+  
+  const pidOutput = node('AGGREGATOR', '⚙️ PID Control Signal', 950, 380,
+    { aggregationType: 'sum',
+      description: 'Combined P+I+D control output' },
+    ['p', 'i', 'd'], ['control']);
+  
+  // === PRODUCTION PLANNING (SubGraph) ===
+  const baseProduction = node('TRANSFORMER', '🏭 Base Production', 1150, 170,
+    { expression: 'Math.max(0, $inputs.forecast * 1.1)',
+      description: 'Production to meet forecast + 10% buffer' },
+    ['forecast'], ['base']);
+  
+  const adjustedProduction = node('TRANSFORMER', '🔧 Adjusted Production', 1150, 320,
+    { expression: 'Math.max(0, $inputs.base + $inputs.control)',
+      description: 'Production adjusted by feedback control signal' },
+    ['base', 'control'], ['adjusted']);
+  
+  // === COST CALCULATION ===
+  const productionCost = node('TRANSFORMER', '💰 Production Cost', 1350, 170,
+    { expression: '$inputs.units * 25',
+      description: 'Cost per unit = $25' },
+    ['units'], ['cost']);
+  
+  const holdingCost = node('TRANSFORMER', '🏠 Holding Cost', 1350, 290,
+    { expression: '$inputs.inventory * 2',
+      description: 'Inventory holding cost = $2/unit' },
+    ['inventory'], ['holding']);
+  
+  const totalCost = node('AGGREGATOR', '📊 Total Cost', 1500, 230,
+    { aggregationType: 'sum' },
+    ['production', 'holding'], ['total']);
+  
+  // === OUTPUTS ===
+  const outForecast = node('OUTPUT', '📈 Demand Forecast', 1700, 50, {}, ['value'], []);
+  const outProduction = node('OUTPUT', '🏭 Production Plan', 1700, 150, {}, ['value'], []);
+  const outInventory = node('OUTPUT', '📦 Projected Inventory', 1700, 250, {}, ['value'], []);
+  const outCost = node('OUTPUT', '💵 Total Cost', 1700, 350, {}, ['value'], []);
+  const outControl = node('OUTPUT', '🎛️ Control Signal', 1700, 450, {}, ['value'], []);
+  
+  // === FEEDBACK VISUALIZATION NODE ===
+  // This represents where feedback would flow back to inventory
+  const feedbackMarker = node('CONSTRAINT', '🔄 FEEDBACK LOOP', 500, 450,
+    { expression: '$inputs.control',
+      description: 'FEEDBACK: Control signal flows back to adjust inventory planning.\nDelay: 1 iteration\nTransform: PID Controller\nConvergence: When error < 5%',
+      min: -500, max: 500 },
+    ['control'], ['feedback']);
+
+  const nodes = [
+    demandHistory, seasonalFactor, marketTrend, demandForecast,
+    currentInventory, safetyStock, reorderPoint,
+    inventoryError, proportionalTerm, integralTerm, derivativeTerm, pidOutput,
+    baseProduction, adjustedProduction,
+    productionCost, holdingCost, totalCost,
+    outForecast, outProduction, outInventory, outCost, outControl,
+    feedbackMarker
+  ];
+  
+  const edges = [
+    // Demand forecasting flow
+    edge(demandHistory, demandForecast),
+    edge(seasonalFactor, demandForecast, 0, 1),
+    edge(marketTrend, demandForecast, 0, 2),
+    
+    // Inventory management
+    edge(demandForecast, reorderPoint),
+    edge(safetyStock, reorderPoint, 0, 1),
+    
+    // Feedback loop - inventory error calculation
+    edge(reorderPoint, inventoryError),  // target
+    edge(currentInventory, inventoryError, 0, 1),  // current
+    
+    // PID controller
+    edge(inventoryError, proportionalTerm),
+    edge(inventoryError, integralTerm),
+    edge(inventoryError, derivativeTerm),
+    edge(proportionalTerm, pidOutput),
+    edge(integralTerm, pidOutput, 0, 1),
+    edge(derivativeTerm, pidOutput, 0, 2),
+    
+    // Production planning
+    edge(demandForecast, baseProduction),
+    edge(baseProduction, adjustedProduction),
+    edge(pidOutput, adjustedProduction, 0, 1),
+    
+    // Cost calculation
+    edge(adjustedProduction, productionCost),
+    edge(currentInventory, holdingCost),
+    edge(productionCost, totalCost),
+    edge(holdingCost, totalCost, 0, 1),
+    
+    // Outputs
+    edge(demandForecast, outForecast),
+    edge(adjustedProduction, outProduction),
+    edge(currentInventory, outInventory),
+    edge(totalCost, outCost),
+    edge(pidOutput, outControl),
+    
+    // Feedback visualization
+    edge(pidOutput, feedbackMarker),
+  ];
+
+  const g = graph(
+    'Hierarchical Supply Chain with Feedback',
+    `🔄 DEMONSTRATES NEW ARCHITECTURE FEATURES:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 HIERARCHICAL SUBGRAPHS (Conceptual)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This model represents what would be 4 subgraphs:
+• 🔮 Demand Forecasting - historical data + trends
+• 📦 Inventory Management - stock levels + safety
+• ⚙️ PID Controller - feedback control loop
+• 🏭 Production Planning - manufacturing decisions
+
+In the full implementation, each cluster could be 
+collapsed into a single SUBGRAPH node and drilled 
+into for detailed analysis.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔄 FEEDBACK LOOP DEMONSTRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The PID controller shows how feedback loops work:
+
+1. ERROR DETECTION
+   Gap = Target Inventory - Current Inventory
+
+2. PID TRANSFORM
+   P = 0.5 × error (immediate response)
+   I = 0.1 × error × iteration (cumulative)
+   D = 0.05 × error rate (damping)
+
+3. FEEDBACK INJECTION
+   Control signal adjusts production planning
+   Delay: 1 iteration (simulates real-world lag)
+
+4. CONVERGENCE
+   Loop stabilizes when error < 5%
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧪 TRY IT: Run Monte Carlo simulation with 
+100+ iterations to see the feedback loop 
+converge to optimal inventory levels!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    nodes, edges
+  );
+  
+  // Add metadata about hierarchical structure
+  g.metadata = {
+    hierarchical: {
+      depth: 2,
+      subgraphs: ['demand-forecast', 'inventory-mgmt', 'pid-controller', 'production-plan'],
+      feedbackLoops: [{
+        id: 'inventory-control',
+        source: 'pidOutput',
+        target: 'currentInventory',
+        transform: 'pid',
+        delay: 1,
+        convergenceTolerance: 0.05
+      }]
+    },
+    features: ['subgraph', 'feedback', 'pid-control', 'convergence'],
+    complexity: 'expert'
+  };
+  
+  return g;
+}
+
 // Export individual sample generators for lazy loading
 export const advancedSampleGenerators = {
   'compound-interest': () => { idCounter = 1000; return createCompoundInterest(); },
@@ -823,6 +1054,7 @@ export const advancedSampleGenerators = {
   'expression-demo': () => { idCounter = 1500; return createExpressionVariablesDemo(); },
   'multi-dim-demo': () => { idCounter = 1600; return createMultiDimensionalDemo(); },
   'natcat-risk': () => { idCounter = 2000; return createNatCatRiskModel(); },
+  'hierarchical-supply-chain': () => { idCounter = 2500; return createHierarchicalSupplyChain(); },
 };
 
 // Legacy function - generates ALL advanced graphs at once (avoid for performance)
@@ -837,6 +1069,7 @@ export function getAdvancedSampleGraphs(): Graph[] {
     createExpressionVariablesDemo(),
     createMultiDimensionalDemo(),
     createNatCatRiskModel(),
+    createHierarchicalSupplyChain(),
   ];
 }
 
@@ -849,4 +1082,5 @@ export const advancedSampleDescriptions = [
   { name: 'Expression Variables Demo', description: 'Shows $inputs, $node, $params, $iteration, $time', complexity: 'Beginner', nodeCount: 10 },
   { name: 'Multi-Dimensional Data Model', description: 'Hierarchical nested data with $params and $node', complexity: 'Advanced', nodeCount: 10 },
   { name: 'NatCat Portfolio Risk & Pricing Model', description: 'Catastrophe risk with multi-region exposure, stochastic severity, reinsurance, pricing, and capital', complexity: 'Expert', nodeCount: 33 },
+  { name: 'Hierarchical Supply Chain with Feedback', description: '🆕 SubGraph hierarchy + PID feedback loops + convergence detection', complexity: 'Expert', nodeCount: 23 },
 ];

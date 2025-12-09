@@ -43,3 +43,36 @@ export {
   calculateRiskMetrics,
   runSensitivityAnalysis,
 } from './simulation/index.js';
+
+// Export feedback loop utilities
+export {
+  createFeedbackState,
+  initializeFeedbackStates,
+  applyFeedbackTransform,
+  checkConvergence,
+  processFeedbackLoop,
+  processAllFeedbackLoops,
+  collectFeedbackInjections,
+  checkGlobalConvergence,
+  getFeedbackInjection,
+} from './feedback/index.js';
+
+// Export subgraph utilities
+export {
+  LocalSubgraphRegistry,
+  globalSubgraphRegistry,
+  mapInputsToSubgraph,
+  mapOutputsFromSubgraph,
+  createSubgraphContext,
+  expandSubgraphInline,
+  createSubgraphExecutionState,
+  executeSubgraphNode,
+  validateSubgraphStructure,
+  getHierarchyDepth,
+} from './subgraph/index.js';
+
+export type {
+  SubgraphRegistry,
+  ExpansionOptions,
+  SubgraphExecutionState,
+} from './subgraph/index.js';
