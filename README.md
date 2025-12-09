@@ -672,6 +672,12 @@ pnpm db:reset         # Reset database
 - Check for expensive expressions in transformers
 - Close other tabs to free up memory
 
+**Out of Memory errors?**
+- Reduce simulation iterations (try 10k instead of 100k)
+- Check [docs/MEMORY_CONFIGURATION.md](docs/MEMORY_CONFIGURATION.md) for tuning options
+- Monitor memory usage via `/health` endpoint
+- Consider increasing Node.js heap size: `node --max-old-space-size=4096`
+
 **Data disappeared?**
 - Check browser localStorage (DevTools > Application > Storage)
 - Try importing the graph if you have a backup
@@ -694,6 +700,28 @@ To add custom metrics:
 - **Medium graphs** (50-500 nodes) - <500ms execution
 - **Large graphs** (500-1000+ nodes) - Virtualized rendering
 - **Monte Carlo** - 10,000 iterations on typical model < 5 seconds
+
+### Memory Resilience
+
+ScenarioForge is designed to handle large-scale simulations efficiently:
+
+- **Streaming aggregation** - Uses reservoir sampling to limit memory usage
+- **Configurable limits** - Max iterations, execution time, and memory usage
+- **Resource monitoring** - Health check endpoint reports memory usage
+- **Database optimization** - TimescaleDB compression and pagination for results
+- **Connection pooling** - Limited pool size prevents resource exhaustion
+
+See [docs/MEMORY_CONFIGURATION.md](docs/MEMORY_CONFIGURATION.md) for detailed configuration guidance.
+
+#### Default Limits
+
+- Max simulation iterations: 1,000,000
+- Max execution time: 5 minutes
+- Max stored results per simulation: 100,000 samples
+- Database connection pool: 20 connections
+- Request timeout: 2 minutes
+
+These limits can be configured via environment variables in `apps/api/.env` (see `.env.example`).
 
 ## Limitations
 
