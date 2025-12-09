@@ -603,9 +603,10 @@ export function PropertiesPanel() {
                   type="number"
                   value={selectedEdge.feedbackIterations ?? 100}
                   onChange={(e) => {
+                    const value = parseInt(e.target.value);
                     const updatedEdges = currentGraph.edges.map((edge) =>
                       edge.id === selectedEdge.id
-                        ? { ...edge, feedbackIterations: parseInt(e.target.value) || 100 }
+                        ? { ...edge, feedbackIterations: isNaN(value) ? 100 : Math.max(1, value) }
                         : edge
                     );
                     useGraphStore.getState().updateLocalEdges(updatedEdges);
@@ -625,9 +626,10 @@ export function PropertiesPanel() {
                   type="number"
                   value={selectedEdge.convergenceTolerance ?? 0.001}
                   onChange={(e) => {
+                    const value = parseFloat(e.target.value);
                     const updatedEdges = currentGraph.edges.map((edge) =>
                       edge.id === selectedEdge.id
-                        ? { ...edge, convergenceTolerance: parseFloat(e.target.value) || 0.001 }
+                        ? { ...edge, convergenceTolerance: isNaN(value) ? 0.001 : Math.max(0, value) }
                         : edge
                     );
                     useGraphStore.getState().updateLocalEdges(updatedEdges);

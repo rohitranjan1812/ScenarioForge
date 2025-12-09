@@ -192,10 +192,12 @@ export function executeSubgraph(
   }
   
   // Execute the subgraph with provided inputs
-  // The inputs should be mapped to the appropriate input nodes in the subgraph
+  // TODO: The inputs should be mapped to the appropriate input nodes in the subgraph
+  // For now, we execute the subgraph with the parent's parameters
   const result = executeGraph(subgraph, context.$params, {
     iteration: context.$iteration,
     time: context.$time,
+    allGraphs, // Pass allGraphs for nested subgraphs
   });
   
   if (!result.success) {
@@ -269,7 +271,14 @@ export function executeGraphWithFeedback(
     for (const edge of feedbackEdges) {
       // Get the new value from the source node output
       const sourceOutputs = result.outputs.get(edge.sourceNodeId);
-      const newValue = sourceOutputs?.output;
+      
+      // Find the source node to get the output port name
+      const sourceNode = graph.nodes.find(n => n.id === edge.sourceNodeId);
+      const sourcePort = sourceNode?.outputPorts.find(p => p.id === edge.sourcePortId);
+      
+      // Get value using port name if available, otherwise try 'output' as fallback
+      const outputKey = sourcePort?.name ?? 'output';
+      const newValue = sourceOutputs?.[outputKey] ?? sourceOutputs?.output;
       
       if (newValue !== undefined) {
         const oldValue = feedbackState.get(edge.id);
