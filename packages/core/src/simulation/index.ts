@@ -359,14 +359,20 @@ export interface MonteCarloResult {
   error?: string;
 }
 
+// Configuration constants
+const DEFAULT_MAX_EXECUTION_TIME = 300000; // 5 minutes
+const DEFAULT_MAX_STORED_RESULTS = 100000; // Limit stored results
+const DEFAULT_RESERVOIR_SIZE = 10000; // Sample size for statistics
+const GC_INTERVAL_ITERATIONS = 50000; // Periodic GC trigger interval
+
 // Streaming statistics accumulator for memory-efficient aggregation
 class StreamingStats {
   private values: number[] = [];
   private readonly reservoirSize: number;
   
-  constructor(maxSamples: number = 10000) {
+  constructor(maxSamples: number = DEFAULT_RESERVOIR_SIZE) {
     // Use reservoir sampling to keep representative sample
-    this.reservoirSize = Math.min(maxSamples, 10000);
+    this.reservoirSize = Math.min(maxSamples, DEFAULT_RESERVOIR_SIZE);
   }
   
   add(value: number, iteration: number): void {
@@ -396,8 +402,8 @@ export function runMonteCarloSimulation(
   onProgress?: (progress: SimulationProgress) => void
 ): MonteCarloResult {
   const startTime = Date.now();
-  const maxExecutionTime = config.maxExecutionTime ?? 300000; // 5 minutes default
-  const maxMemoryResults = 100000; // Limit stored results to prevent OOM
+  const maxExecutionTime = config.maxExecutionTime ?? DEFAULT_MAX_EXECUTION_TIME;
+  const maxMemoryResults = DEFAULT_MAX_STORED_RESULTS;
   
   // Use streaming aggregation instead of storing all results
   const streamingStats = new Map<string, StreamingStats>();
@@ -477,7 +483,7 @@ export function runMonteCarloSimulation(
     }
     
     // Periodic memory cleanup for very long simulations
-    if (i > 0 && i % 50000 === 0 && typeof global !== 'undefined' && global.gc) {
+    if (i > 0 && i % GC_INTERVAL_ITERATIONS === 0 && typeof global !== 'undefined' && global.gc) {
       global.gc();
     }
   }

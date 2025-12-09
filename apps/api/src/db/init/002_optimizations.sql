@@ -20,10 +20,8 @@ ANALYZE edges;
 ANALYZE simulation_results;
 ANALYZE simulation_summaries;
 
--- Add constraint to limit iterations (optional safety check)
-ALTER TABLE simulation_summaries 
-  ADD CONSTRAINT check_iteration_limit 
-  CHECK (iterations_completed >= 0 AND iterations_completed <= 10000000);
+-- Note: Iteration limits are enforced at the application level via MAX_SIMULATION_ITERATIONS
+-- to allow flexible configuration without database schema changes
 
 -- Create materialized view for frequently accessed simulation metrics
 CREATE MATERIALIZED VIEW IF NOT EXISTS simulation_metrics_summary AS

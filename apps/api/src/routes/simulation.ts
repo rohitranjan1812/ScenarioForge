@@ -233,8 +233,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           metrics[key] = value;
         }
         
-        // Store only aggregated results to save memory
-        const limitedResults = result.results.slice(0, 10000); // Store max 10k raw results
+        // Store only limited results sample to save memory
+        const maxStoredResults = parseInt(process.env.MAX_STORED_RESULTS ?? '10000');
+        const limitedResults = result.results.slice(0, maxStoredResults);
         
         await pool.query(
           `UPDATE simulations 

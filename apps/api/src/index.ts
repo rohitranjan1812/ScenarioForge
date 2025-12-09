@@ -28,13 +28,16 @@ async function main() {
   // Request timeout middleware
   app.use((req, res, next) => {
     req.setTimeout(REQUEST_TIMEOUT, () => {
-      res.status(408).json({
-        success: false,
-        error: {
-          code: 'REQUEST_TIMEOUT',
-          message: 'Request timed out',
-        },
-      });
+      // Only send error if response hasn't been sent yet
+      if (!res.headersSent) {
+        res.status(408).json({
+          success: false,
+          error: {
+            code: 'REQUEST_TIMEOUT',
+            message: 'Request timed out',
+          },
+        });
+      }
     });
     next();
   });
