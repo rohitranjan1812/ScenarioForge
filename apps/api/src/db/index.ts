@@ -14,6 +14,18 @@ export function getPool(): pg.Pool {
       database: process.env.DB_NAME ?? 'scenarioforge',
       user: process.env.DB_USER ?? 'postgres',
       password: process.env.DB_PASSWORD ?? 'postgres',
+      // Connection pool limits for resilience
+      max: parseInt(process.env.DB_POOL_MAX ?? '20'), // Maximum pool size
+      min: parseInt(process.env.DB_POOL_MIN ?? '2'),  // Minimum pool size
+      idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT ?? '30000'),
+      connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT ?? '10000'),
+      // Statement timeout to prevent long-running queries
+      statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT ?? '60000'),
+    });
+    
+    // Log pool errors
+    pool.on('error', (err) => {
+      console.error('Unexpected database pool error:', err);
     });
   }
   return pool;

@@ -359,13 +359,56 @@ export interface MonteCarloResult {
   error?: string;
 }
 
+// Configuration constants
+const DEFAULT_MAX_EXECUTION_TIME = 300000; // 5 minutes
+const DEFAULT_MAX_STORED_RESULTS = 100000; // Limit stored results
+const DEFAULT_RESERVOIR_SIZE = 10000; // Sample size for statistics
+const GC_INTERVAL_ITERATIONS = 50000; // Periodic GC trigger interval
+
+// Streaming statistics accumulator for memory-efficient aggregation
+class StreamingStats {
+  private values: number[] = [];
+  private readonly reservoirSize: number;
+  
+  constructor(maxSamples: number = DEFAULT_RESERVOIR_SIZE) {
+    // Use reservoir sampling to keep representative sample
+    this.reservoirSize = Math.min(maxSamples, DEFAULT_RESERVOIR_SIZE);
+  }
+  
+  add(value: number, iteration: number): void {
+    if (this.values.length < this.reservoirSize) {
+      this.values.push(value);
+    } else {
+      // Reservoir sampling: replace with decreasing probability
+      const j = Math.floor(Math.random() * (iteration + 1));
+      if (j < this.reservoirSize) {
+        this.values[j] = value;
+      }
+    }
+  }
+  
+  getMetrics(): RiskMetrics {
+    return calculateRiskMetrics(this.values);
+  }
+  
+  getValues(): number[] {
+    return [...this.values];
+  }
+}
+
 export function runMonteCarloSimulation(
   graph: Graph,
   config: SimulationConfig,
   onProgress?: (progress: SimulationProgress) => void
 ): MonteCarloResult {
   const startTime = Date.now();
+  const maxExecutionTime = config.maxExecutionTime ?? DEFAULT_MAX_EXECUTION_TIME;
+  const maxMemoryResults = DEFAULT_MAX_STORED_RESULTS;
+  
+  // Use streaming aggregation instead of storing all results
+  const streamingStats = new Map<string, StreamingStats>();
   const results: SimulationResult[] = [];
+  let resultsCount = 0;
   
   // Set seed for reproducibility
   if (config.seed !== undefined) {
@@ -377,13 +420,19 @@ export function runMonteCarloSimulation(
   
   // Run iterations
   for (let i = 0; i < config.iterations; i++) {
+    // Check execution timeout
+    if (Date.now() - startTime > maxExecutionTime) {
+      console.warn(`Simulation timeout after ${i} iterations`);
+      break;
+    }
+    
     const execResult = executeGraph(graph, params, { iteration: i });
     
     if (!execResult.success) {
       return {
         success: false,
         iterations: i,
-        results,
+        results: results.slice(0, 1000), // Return only sample of results
         aggregated: new Map(),
         executionTimeMs: Date.now() - startTime,
         error: `Iteration ${i} failed: ${execResult.error}`,
@@ -396,20 +445,33 @@ export function runMonteCarloSimulation(
       if (config.outputNodes.length === 0 || config.outputNodes.includes(outputNode.nodeId)) {
         for (const [key, value] of Object.entries(outputNode.outputs)) {
           if (typeof value === 'number') {
-            results.push({
-              simulationId: config.id,
-              iteration: i,
-              nodeId: outputNode.nodeId,
-              outputKey: key,
-              value,
-            });
+            const statsKey = `${outputNode.nodeId}:${key}`;
+            
+            // Use streaming aggregation
+            if (!streamingStats.has(statsKey)) {
+              streamingStats.set(statsKey, new StreamingStats());
+            }
+            streamingStats.get(statsKey)!.add(value, i);
+            
+            // Only store limited results to prevent memory exhaustion
+            if (resultsCount < maxMemoryResults || config.captureIntermediates) {
+              results.push({
+                simulationId: config.id,
+                iteration: i,
+                nodeId: outputNode.nodeId,
+                outputKey: key,
+                value,
+              });
+              resultsCount++;
+            }
           }
         }
       }
     }
     
-    // Report progress
-    if (onProgress && i % 100 === 0) {
+    // Report progress more frequently for long simulations
+    const progressInterval = config.iterations > 10000 ? 1000 : 100;
+    if (onProgress && i % progressInterval === 0) {
       onProgress({
         simulationId: config.id,
         status: 'running',
@@ -419,15 +481,23 @@ export function runMonteCarloSimulation(
         startedAt: new Date(startTime),
       });
     }
+    
+    // Periodic memory cleanup for very long simulations
+    if (i > 0 && i % GC_INTERVAL_ITERATIONS === 0 && typeof global !== 'undefined' && global.gc) {
+      global.gc();
+    }
   }
   
-  // Aggregate results by node/output key
-  const aggregated = aggregateResults(results);
+  // Build aggregated metrics from streaming stats
+  const aggregated = new Map<string, RiskMetrics>();
+  for (const [key, stats] of streamingStats) {
+    aggregated.set(key, stats.getMetrics());
+  }
   
   return {
     success: true,
     iterations: config.iterations,
-    results,
+    results: results.slice(0, maxMemoryResults), // Return limited sample
     aggregated,
     executionTimeMs: Date.now() - startTime,
   };
@@ -437,6 +507,8 @@ export function runMonteCarloSimulation(
 // Result Aggregation and Risk Metrics
 // ============================================
 
+// Legacy aggregation function - kept for backward compatibility
+// Use StreamingStats class for memory-efficient aggregation instead
 function aggregateResults(results: SimulationResult[]): Map<string, RiskMetrics> {
   const grouped = new Map<string, number[]>();
   
@@ -457,6 +529,9 @@ function aggregateResults(results: SimulationResult[]): Map<string, RiskMetrics>
   
   return metrics;
 }
+
+// Make aggregateResults available for backward compatibility if needed
+export { aggregateResults };
 
 export function calculateRiskMetrics(values: number[]): RiskMetrics {
   const sorted = [...values].sort((a, b) => a - b);

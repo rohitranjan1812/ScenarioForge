@@ -11,6 +11,10 @@ import { setupWebSocket } from './websocket/index.js';
 
 const PORT = process.env.PORT ?? 3000;
 
+// Memory and resource limits
+const MAX_REQUEST_SIZE = process.env.MAX_REQUEST_SIZE ?? '50mb';
+const REQUEST_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT ?? '120000'); // 2 minutes default
+
 async function main() {
   // Initialize database
   await initializeDatabase();
@@ -19,11 +23,41 @@ async function main() {
   
   // Middleware
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: MAX_REQUEST_SIZE }));
   
-  // Health check
+  // Request timeout middleware
+  app.use((req, res, next) => {
+    req.setTimeout(REQUEST_TIMEOUT, () => {
+      // Only send error if response hasn't been sent yet
+      if (!res.headersSent) {
+        res.status(408).json({
+          success: false,
+          error: {
+            code: 'REQUEST_TIMEOUT',
+            message: 'Request timed out',
+          },
+        });
+      }
+    });
+    next();
+  });
+  
+  // Health check with memory monitoring
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    const memUsage = process.memoryUsage();
+    const memUsageMB = {
+      rss: Math.round(memUsage.rss / 1024 / 1024),
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+      external: Math.round(memUsage.external / 1024 / 1024),
+    };
+    
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      memory: memUsageMB,
+      uptime: Math.floor(process.uptime()),
+    });
   });
   
   // API routes
