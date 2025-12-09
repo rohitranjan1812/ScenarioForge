@@ -813,6 +813,65 @@ function createNatCatRiskModel(): Graph {
   return g;
 }
 
+// ============================================================================
+// 9. FEEDBACK LOOP DEMO - Newton's Method for Square Root
+// ============================================================================
+function createFeedbackLoopDemo(): Graph {
+  // Demonstrates iterative convergence using feedback edges
+  // Calculates square root of target using Newton's method: x_new = (x + target/x) / 2
+  
+  const target = node('CONSTANT', 'Target (√25)', 50, 100, { value: 25 }, [], ['value']);
+  const guess = node('PARAMETER', 'Initial Guess', 50, 200, { value: 5, min: 0.1, max: 100 }, ['feedback'], ['value']);
+  
+  // Newton's method: new_guess = (guess + target/guess) / 2
+  const divider = node('TRANSFORMER', 'Divide', 300, 150,
+    { expression: '$inputs.target / $inputs.guess' }, ['target', 'guess'], ['quotient']);
+  
+  const summer = node('TRANSFORMER', 'Add', 500, 150,
+    { expression: '$inputs.guess + $inputs.quotient' }, ['guess', 'quotient'], ['sum']);
+  
+  const halver = node('TRANSFORMER', 'Average', 700, 150,
+    { expression: '$inputs.sum / 2' }, ['sum'], ['new_guess']);
+  
+  const result = node('OUTPUT', 'Result', 900, 150, {}, ['value'], []);
+  
+  const nodes = [target, guess, divider, summer, halver, result];
+  
+  // Forward flow
+  const e1 = edge(target, divider, 0, 0);
+  const e2 = edge(guess, divider, 0, 1);
+  const e3 = edge(guess, summer, 0, 0);
+  const e4 = edge(divider, summer, 0, 1);
+  const e5 = edge(summer, halver, 0, 0);
+  const e6 = edge(halver, result, 0, 0);
+  
+  // Feedback edge - creates iterative loop
+  const feedback = edge(halver, guess, 0, 0);
+  feedback.type = 'FEEDBACK';
+  feedback.feedbackIterations = 50;
+  feedback.convergenceTolerance = 0.0001;
+  feedback.animated = true;
+  feedback.label = '🔄 Feedback';
+  feedback.style = { strokeColor: '#8b5cf6', strokeWidth: 3, strokeDasharray: '5 5' };
+  
+  const g = graph(
+    'Feedback Loop Demo',
+    'Newton\'s Method for calculating square root using iterative feedback convergence',
+    nodes,
+    [e1, e2, e3, e4, e5, e6, feedback]
+  );
+  
+  g.metadata = {
+    algorithm: 'Newton\'s Method',
+    formula: 'x_new = (x + target/x) / 2',
+    expectedResult: 5.0, // √25 = 5
+    convergenceIterations: 'Typically 3-5 iterations',
+    notes: 'Demonstrates feedback edge with convergence detection'
+  };
+  
+  return g;
+}
+
 // Export individual sample generators for lazy loading
 export const advancedSampleGenerators = {
   'compound-interest': () => { idCounter = 1000; return createCompoundInterest(); },
@@ -823,6 +882,7 @@ export const advancedSampleGenerators = {
   'expression-demo': () => { idCounter = 1500; return createExpressionVariablesDemo(); },
   'multi-dim-demo': () => { idCounter = 1600; return createMultiDimensionalDemo(); },
   'natcat-risk': () => { idCounter = 2000; return createNatCatRiskModel(); },
+  'feedback-loop-demo': () => { idCounter = 3000; return createFeedbackLoopDemo(); },
 };
 
 // Legacy function - generates ALL advanced graphs at once (avoid for performance)
@@ -837,6 +897,7 @@ export function getAdvancedSampleGraphs(): Graph[] {
     createExpressionVariablesDemo(),
     createMultiDimensionalDemo(),
     createNatCatRiskModel(),
+    createFeedbackLoopDemo(),
   ];
 }
 
@@ -849,4 +910,5 @@ export const advancedSampleDescriptions = [
   { name: 'Expression Variables Demo', description: 'Shows $inputs, $node, $params, $iteration, $time', complexity: 'Beginner', nodeCount: 10 },
   { name: 'Multi-Dimensional Data Model', description: 'Hierarchical nested data with $params and $node', complexity: 'Advanced', nodeCount: 10 },
   { name: 'NatCat Portfolio Risk & Pricing Model', description: 'Catastrophe risk with multi-region exposure, stochastic severity, reinsurance, pricing, and capital', complexity: 'Expert', nodeCount: 33 },
+  { name: 'Feedback Loop Demo', description: 'Iterative convergence with feedback edges', complexity: 'Advanced', nodeCount: 6 },
 ];
