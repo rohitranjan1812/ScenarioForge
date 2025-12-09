@@ -5,7 +5,6 @@ import { getPool } from '../db/index.js';
 import { 
   runMonteCarloSimulation, 
   executeGraph, 
-  calculateRiskMetrics,
   runSensitivityAnalysis,
 } from '@scenarioforge/core';
 import type { 
@@ -167,6 +166,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
     
+    // Enforce iteration limits to prevent memory exhaustion
+    const MAX_ITERATIONS = parseInt(process.env.MAX_SIMULATION_ITERATIONS ?? '1000000');
+    const actualIterations = Math.min(iterations, MAX_ITERATIONS);
+    
+    if (iterations > MAX_ITERATIONS) {
+      console.warn(`Simulation iterations capped from ${iterations} to ${MAX_ITERATIONS}`);
+    }
+    
     const graph = await getGraph(graphId);
     if (!graph) {
       res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Graph not found' } });
@@ -181,7 +188,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const config: Partial<SimulationConfig> = {
       graphId,
       mode,
-      iterations,
+      iterations: actualIterations,
       seed,
       outputNodes: resolvedOutputNodes,
     };
@@ -197,15 +204,17 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       try {
         const startTime = Date.now();
         
-        // Build complete SimulationConfig
+        // Build complete SimulationConfig with resource limits
+        const maxExecutionTime = parseInt(process.env.MAX_SIMULATION_TIME ?? '300000'); // 5 minutes
+        
         const fullConfig: SimulationConfig = {
           id: simulationId,
           graphId,
           name: `Simulation ${simulationId.substring(0, 8)}`,
           mode: mode ?? 'monte_carlo',
-          iterations,
+          iterations: actualIterations,
           seed,
-          maxExecutionTime: 300000, // 5 minutes
+          maxExecutionTime,
           parallelism: 1,
           outputNodes: resolvedOutputNodes,
           captureIntermediates: false,
@@ -214,27 +223,25 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         const result = runMonteCarloSimulation(graph, fullConfig);
         const endTime = Date.now();
         
-        // Calculate metrics from results array grouped by nodeId
+        if (!result.success) {
+          throw new Error(result.error ?? 'Simulation failed');
+        }
+        
+        // Calculate metrics from aggregated results (memory efficient)
         const metrics: Record<string, unknown> = {};
-        const resultsByNode = new Map<string, number[]>();
-        
-        for (const r of result.results) {
-          const key = r.nodeId;
-          if (!resultsByNode.has(key)) {
-            resultsByNode.set(key, []);
-          }
-          resultsByNode.get(key)!.push(r.value);
+        for (const [key, value] of result.aggregated) {
+          metrics[key] = value;
         }
         
-        for (const [nodeId, values] of resultsByNode) {
-          metrics[nodeId] = calculateRiskMetrics(values);
-        }
+        // Store only aggregated results to save memory
+        const limitedResults = result.results.slice(0, 10000); // Store max 10k raw results
         
         await pool.query(
           `UPDATE simulations 
            SET status = $1, results = $2, metrics = $3, execution_time_ms = $4, updated_at = $5
            WHERE id = $6`,
-          ['completed', JSON.stringify(result), JSON.stringify(metrics), endTime - startTime, new Date(), simulationId]
+          ['completed', JSON.stringify({ iterations: result.iterations, sample: limitedResults }), 
+           JSON.stringify(metrics), endTime - startTime, new Date(), simulationId]
         );
       } catch (err) {
         console.error('Simulation failed:', err);
@@ -250,7 +257,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       data: { 
         id: simulationId, 
         status: 'running', 
-        config 
+        config: { ...config, iterations: actualIterations }
       } 
     });
   } catch (error) {

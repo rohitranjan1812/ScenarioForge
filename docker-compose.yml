@@ -9,6 +9,11 @@ services:
       POSTGRES_USER: scenarioforge
       POSTGRES_PASSWORD: scenarioforge
       POSTGRES_DB: scenarioforge
+      # PostgreSQL memory configuration
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_WORK_MEM: 16MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 128MB
     ports:
       - "5432:5432"
     volumes:
@@ -19,11 +24,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
   # Redis for caching and pub/sub
   redis:
     image: redis:7-alpine
     container_name: scenarioforge-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -33,6 +45,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
 
 volumes:
   postgres_data:
