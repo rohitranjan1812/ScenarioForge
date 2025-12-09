@@ -2,6 +2,8 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import type { NodeDefinition, NodeType } from '@scenarioforge/core';
+import { useGraphStore } from '../../stores/graphStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 
 // Node type colors
 const nodeColors: Record<NodeType, { bg: string; border: string; text: string }> = {
@@ -40,6 +42,22 @@ function CustomNodeComponent({ data, selected }: NodeProps<CustomNodeData>) {
   const colors = nodeColors[data.type] ?? nodeColors.CONSTANT;
   const icon = nodeIcons[data.type] ?? '📦';
   const nodeData = data.data ?? {};
+  const { loadGraph, graphs } = useGraphStore();
+  const { navigateToSubgraph, setGraphName } = useNavigationStore();
+  
+  const handleDrillDown = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (data.type === 'SUBGRAPH' && data.subgraphId) {
+      // Find the subgraph
+      const subgraph = graphs.find(g => g.id === data.subgraphId);
+      if (subgraph) {
+        navigateToSubgraph(data.subgraphId, subgraph.name);
+        setGraphName(data.subgraphId, subgraph.name);
+        await loadGraph(data.subgraphId);
+      }
+    }
+  };
   
   return (
     <div
@@ -154,6 +172,19 @@ function CustomNodeComponent({ data, selected }: NodeProps<CustomNodeData>) {
             {String(nodeData.constraintExpression)}
           </div>
         ) : null}
+        
+        {/* Subgraph drill-down button */}
+        {data.type === 'SUBGRAPH' && data.subgraphId && (
+          <button
+            onClick={handleDrillDown}
+            className="w-full mt-2 px-2 py-1 bg-indigo-500 text-white text-xs rounded hover:bg-indigo-600 transition-colors flex items-center justify-center gap-1"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            Drill Down
+          </button>
+        )}
         
         {/* Show computed output if available */}
         {data.computedOutput !== undefined && (

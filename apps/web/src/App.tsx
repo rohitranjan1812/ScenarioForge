@@ -6,6 +6,7 @@ import { PropertiesPanel } from './components/panels/PropertiesPanel';
 import { SimulationPanel } from './components/panels/SimulationPanel';
 import { GlobalParamsPanel } from './components/panels/GlobalParamsPanel';
 import { GraphSelector } from './components/panels/GraphSelector';
+import { BreadcrumbNavigation } from './components/navigation/BreadcrumbNavigation';
 import { useGraphStore } from './stores/graphStore';
 import 'reactflow/dist/style.css';
 
@@ -90,6 +91,9 @@ export default function App() {
 
       {/* Main Canvas */}
       <div className="flex-1 flex flex-col">
+        {/* Breadcrumb Navigation */}
+        <BreadcrumbNavigation />
+        
         {/* Toolbar */}
         <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center px-4 gap-4">
           <span className="text-white font-medium">

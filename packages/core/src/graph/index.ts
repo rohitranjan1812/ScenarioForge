@@ -95,6 +95,8 @@ export function createEdge(input: CreateEdgeInput): EdgeDefinition {
     delay: input.delay,
     condition: input.condition,
     transformFunction: input.transformFunction,
+    feedbackIterations: input.feedbackIterations,
+    convergenceTolerance: input.convergenceTolerance,
     style: input.style ?? {},
     animated: input.animated ?? false,
     label: input.label,
@@ -481,4 +483,97 @@ export function exportGraph(graph: Graph): GraphExport {
 export function importGraph(exported: GraphExport): Graph {
   // Re-generate IDs on import to avoid conflicts
   return cloneGraph(exported.graph, exported.graph.name);
+}
+
+// ============================================
+// Subgraph Utilities
+// ============================================
+
+/**
+ * Find all SUBGRAPH nodes in a graph
+ */
+export function getSubgraphNodes(graph: Graph): NodeDefinition[] {
+  return graph.nodes.filter(n => n.type === 'SUBGRAPH');
+}
+
+/**
+ * Get all referenced subgraph IDs from a graph
+ */
+export function getReferencedSubgraphs(graph: Graph): string[] {
+  const subgraphNodes = getSubgraphNodes(graph);
+  return subgraphNodes
+    .map(n => n.subgraphId)
+    .filter((id): id is string => id !== undefined);
+}
+
+/**
+ * Check if a graph contains cycles excluding FEEDBACK edges
+ */
+export function hasCyclesWithoutFeedback(graph: Graph): boolean {
+  return detectCycle(graph);
+}
+
+/**
+ * Get all feedback edges in a graph
+ */
+export function getFeedbackEdges(graph: Graph): EdgeDefinition[] {
+  return graph.edges.filter(e => e.type === 'FEEDBACK');
+}
+
+/**
+ * Create a subgraph from selected nodes
+ */
+export function createSubgraphFromNodes(
+  parentGraph: Graph,
+  nodeIds: string[],
+  subgraphName: string
+): { subgraph: Graph; mappings: { inputMappings: any[]; outputMappings: any[] } } {
+  const selectedNodes = parentGraph.nodes.filter(n => nodeIds.includes(n.id));
+  const nodeIdSet = new Set(nodeIds);
+  
+  // Find edges within the selection
+  const internalEdges = parentGraph.edges.filter(
+    e => nodeIdSet.has(e.sourceNodeId) && nodeIdSet.has(e.targetNodeId)
+  );
+  
+  // Find boundary edges (input and output)
+  const inputEdges = parentGraph.edges.filter(
+    e => !nodeIdSet.has(e.sourceNodeId) && nodeIdSet.has(e.targetNodeId)
+  );
+  
+  const outputEdges = parentGraph.edges.filter(
+    e => nodeIdSet.has(e.sourceNodeId) && !nodeIdSet.has(e.targetNodeId)
+  );
+  
+  const now = new Date();
+  
+  // Create the subgraph
+  const subgraph: Graph = {
+    id: generateId(),
+    name: subgraphName,
+    description: 'Extracted subgraph',
+    nodes: selectedNodes.map(n => ({ ...n })),
+    edges: internalEdges.map(e => ({ ...e })),
+    metadata: { extractedFrom: parentGraph.id },
+    parentGraphId: parentGraph.id,
+    isSubgraph: true,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+  
+  // Create mappings for input/output ports
+  const inputMappings = inputEdges.map(e => ({
+    parentPortId: e.sourcePortId,
+    subgraphNodeId: e.targetNodeId,
+    subgraphPortId: e.targetPortId,
+  }));
+  
+  const outputMappings = outputEdges.map(e => ({
+    parentPortId: e.targetPortId,
+    subgraphNodeId: e.sourceNodeId,
+    subgraphPortId: e.sourcePortId,
+  }));
+  
+  return { subgraph, mappings: { inputMappings, outputMappings } };
 }

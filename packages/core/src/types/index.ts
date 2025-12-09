@@ -87,6 +87,9 @@ export interface NodeDefinition {
   inputPorts: Port[];
   outputPorts: Port[];
   
+  // Subgraph reference (for SUBGRAPH type nodes)
+  subgraphId?: string;
+  
   // Metadata
   tags: string[];
   color?: string;
@@ -164,6 +167,10 @@ export interface EdgeDefinition {
   condition?: string;  // Expression for conditional activation
   transformFunction?: string;
   
+  // Feedback loop properties
+  feedbackIterations?: number;  // Max iterations for feedback loops
+  convergenceTolerance?: number;  // Convergence threshold
+  
   // Visual
   style: EdgeStyle;
   animated: boolean;
@@ -186,6 +193,8 @@ export interface CreateEdgeInput {
   delay?: number;
   condition?: string;
   transformFunction?: string;
+  feedbackIterations?: number;
+  convergenceTolerance?: number;
   style?: EdgeStyle;
   animated?: boolean;
   label?: string;
@@ -199,6 +208,8 @@ export interface UpdateEdgeInput {
   delay?: number;
   condition?: string;
   transformFunction?: string;
+  feedbackIterations?: number;
+  convergenceTolerance?: number;
   style?: EdgeStyle;
   animated?: boolean;
   label?: string;
@@ -217,6 +228,10 @@ export interface Graph {
   metadata: Record<string, unknown>;
   /** Global simulation parameters accessible via $params in expressions */
   params?: Record<string, unknown>;
+  /** Parent graph ID if this is a subgraph */
+  parentGraphId?: string;
+  /** Whether this graph is a reusable subgraph */
+  isSubgraph?: boolean;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -475,4 +490,66 @@ export interface ValidationError {
   field: string;
   message: string;
   code: string;
+}
+
+// ============================================
+// Feedback Loop Types
+// ============================================
+
+export interface FeedbackLoopState {
+  edgeId: string;
+  iteration: number;
+  previousValue: unknown;
+  currentValue: unknown;
+  converged: boolean;
+  convergenceDelta?: number;
+}
+
+export interface FeedbackLoopResult {
+  edgeId: string;
+  iterations: number;
+  finalValue: unknown;
+  converged: boolean;
+  convergenceHistory: { iteration: number; value: unknown; delta: number }[];
+}
+
+// ============================================
+// Subgraph Types
+// ============================================
+
+export interface SubgraphPortMapping {
+  /** Parent node port ID */
+  parentPortId: string;
+  /** Subgraph node ID */
+  subgraphNodeId: string;
+  /** Subgraph node port ID */
+  subgraphPortId: string;
+}
+
+export interface SubgraphDefinition {
+  /** Reference to the graph being used as subgraph */
+  graphId: string;
+  /** Input port mappings from parent to subgraph */
+  inputMappings: SubgraphPortMapping[];
+  /** Output port mappings from subgraph to parent */
+  outputMappings: SubgraphPortMapping[];
+}
+
+// ============================================
+// Graph Navigation Types
+// ============================================
+
+export interface GraphNavigationState {
+  /** Stack of graph IDs representing navigation history */
+  navigationStack: string[];
+  /** Current graph being viewed */
+  currentGraphId: string;
+  /** Parent graph ID if viewing a subgraph */
+  parentGraphId?: string;
+}
+
+export interface BreadcrumbItem {
+  graphId: string;
+  graphName: string;
+  level: number;
 }
