@@ -552,11 +552,11 @@ export function PropertiesPanel() {
   
   if (selectedEdge) {
     return (
-      <div className="h-full p-4">
+      <div className="h-full p-4 overflow-y-auto">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
           Edge Properties
         </h2>
-        <div className="space-y-3 text-sm">
+        <div className="space-y-4 text-sm">
           <div>
             <span className="text-gray-500">From:</span>{' '}
             <span className="font-mono text-gray-200">
@@ -569,9 +569,86 @@ export function PropertiesPanel() {
               {currentGraph.nodes.find((n) => n.id === selectedEdge.targetNodeId)?.name ?? selectedEdge.targetNodeId}
             </span>
           </div>
+          
+          <div>
+            <label className={labelClass}>Edge Type</label>
+            <select
+              value={selectedEdge.type}
+              onChange={(e) => {
+                const updatedEdges = currentGraph.edges.map((edge) =>
+                  edge.id === selectedEdge.id
+                    ? { ...edge, type: e.target.value as typeof selectedEdge.type }
+                    : edge
+                );
+                useGraphStore.getState().updateLocalEdges(updatedEdges);
+              }}
+              className={selectClass}
+            >
+              <option value="DATA_FLOW">Data Flow</option>
+              <option value="DEPENDENCY">Dependency</option>
+              <option value="CONDITIONAL">Conditional</option>
+              <option value="FEEDBACK">Feedback</option>
+              <option value="TEMPORAL">Temporal</option>
+            </select>
+          </div>
+          
+          {selectedEdge.type === 'FEEDBACK' && (
+            <>
+              <div>
+                <label className={labelClass}>
+                  Max Iterations
+                  <span className="text-gray-500 ml-1">(default: 100)</span>
+                </label>
+                <input
+                  type="number"
+                  value={selectedEdge.feedbackIterations ?? 100}
+                  onChange={(e) => {
+                    const updatedEdges = currentGraph.edges.map((edge) =>
+                      edge.id === selectedEdge.id
+                        ? { ...edge, feedbackIterations: parseInt(e.target.value) || 100 }
+                        : edge
+                    );
+                    useGraphStore.getState().updateLocalEdges(updatedEdges);
+                  }}
+                  className={inputClass}
+                  min="1"
+                  max="10000"
+                />
+              </div>
+              
+              <div>
+                <label className={labelClass}>
+                  Convergence Tolerance
+                  <span className="text-gray-500 ml-1">(default: 0.001)</span>
+                </label>
+                <input
+                  type="number"
+                  value={selectedEdge.convergenceTolerance ?? 0.001}
+                  onChange={(e) => {
+                    const updatedEdges = currentGraph.edges.map((edge) =>
+                      edge.id === selectedEdge.id
+                        ? { ...edge, convergenceTolerance: parseFloat(e.target.value) || 0.001 }
+                        : edge
+                    );
+                    useGraphStore.getState().updateLocalEdges(updatedEdges);
+                  }}
+                  className={inputClass}
+                  step="0.0001"
+                  min="0"
+                />
+              </div>
+              
+              <div className="p-3 bg-blue-900 bg-opacity-30 rounded border border-blue-500">
+                <p className="text-xs text-blue-200">
+                  ℹ️ Feedback edges create iterative loops that execute until convergence or max iterations.
+                </p>
+              </div>
+            </>
+          )}
+          
           <button
             onClick={() => deleteEdge(selectedEdge.id)}
-            className="w-full px-4 py-2 bg-red-900 text-red-200 rounded-md hover:bg-red-800 transition-colors"
+            className="w-full px-4 py-2 bg-red-900 text-red-200 rounded-md hover:bg-red-800 transition-colors mt-4"
           >
             Delete Edge
           </button>

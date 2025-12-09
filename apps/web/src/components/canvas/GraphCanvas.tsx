@@ -40,17 +40,21 @@ function toFlowNode(node: NodeDefinition): Node {
 
 // Convert our edge format to React Flow format
 function toFlowEdge(edge: EdgeDefinition): Edge {
+  // Special styling for feedback edges
+  const isFeedback = edge.type === 'FEEDBACK';
+  
   return {
     id: edge.id,
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
     sourceHandle: edge.sourcePortId,
     targetHandle: edge.targetPortId,
-    animated: edge.animated,
-    label: edge.label,
+    animated: edge.animated || isFeedback, // Animate feedback edges
+    label: edge.label || (isFeedback ? '🔄 Feedback' : undefined),
     style: {
-      strokeWidth: edge.style?.strokeWidth ?? 2,
-      stroke: edge.style?.strokeColor ?? '#64748b',
+      strokeWidth: edge.style?.strokeWidth ?? (isFeedback ? 3 : 2),
+      stroke: edge.style?.strokeColor ?? (isFeedback ? '#8b5cf6' : '#64748b'),
+      strokeDasharray: isFeedback ? '5 5' : undefined,
     },
   };
 }
