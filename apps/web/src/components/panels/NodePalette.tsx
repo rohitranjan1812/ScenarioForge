@@ -6,7 +6,7 @@ interface NodeTypeInfo {
   name: string;
   description: string;
   icon: string;
-  category: 'input' | 'transform' | 'output' | 'control';
+  category: 'input' | 'transform' | 'output' | 'control' | 'hierarchical';
 }
 
 const nodeTypes: NodeTypeInfo[] = [
@@ -80,6 +80,15 @@ const nodeTypes: NodeTypeInfo[] = [
     icon: '🚫',
     category: 'control',
   },
+  
+  // Hierarchical nodes (NEW)
+  {
+    type: 'SUBGRAPH',
+    name: 'Subgraph',
+    description: 'Nested graph (drill down)',
+    icon: '📦',
+    category: 'hierarchical',
+  },
 ];
 
 const categories = [
@@ -87,10 +96,12 @@ const categories = [
   { id: 'transform', name: 'Transform', color: 'bg-blue-100 text-blue-800' },
   { id: 'output', name: 'Outputs', color: 'bg-red-100 text-red-800' },
   { id: 'control', name: 'Control', color: 'bg-purple-100 text-purple-800' },
+  { id: 'hierarchical', name: '🆕 Hierarchical', color: 'bg-indigo-100 text-indigo-800' },
 ];
 
 function NodeTypeCard({ nodeType }: { nodeType: NodeTypeInfo }) {
   const onDragStart = (event: React.DragEvent) => {
+    console.log('Drag started for:', nodeType.type);
     event.dataTransfer.setData('application/node-type', nodeType.type);
     event.dataTransfer.effectAllowed = 'move';
   };

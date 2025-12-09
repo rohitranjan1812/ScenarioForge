@@ -1044,6 +1044,144 @@ converge to optimal inventory levels!
   return g;
 }
 
+// ============================================================================
+// 10. SIMPLE SUBGRAPH DEMO - Easy visual demonstration of hierarchical features
+// ============================================================================
+function createSimpleSubgraphDemo(): Graph {
+  // Main inputs
+  const revenue = node('PARAMETER', '💰 Revenue Input', 50, 100, 
+    { value: 100000, min: 0, max: 1000000, description: 'Annual revenue' }, [], ['value']);
+  const costs = node('PARAMETER', '💸 Costs Input', 50, 250, 
+    { value: 60000, min: 0, max: 500000, description: 'Annual costs' }, [], ['value']);
+  const growthRate = node('PARAMETER', '📈 Growth Rate %', 50, 400, 
+    { value: 10, min: -20, max: 50, description: 'Year-over-year growth' }, [], ['value']);
+
+  // SUBGRAPH 1: Profit Calculator (encapsulates profit logic)
+  const profitSubgraph = node('SUBGRAPH', '📦 Profit Calculator', 300, 150, 
+    { 
+      subgraphId: 'profit-calc-subgraph',
+      description: 'Encapsulates gross and net profit calculations',
+      nodeCount: 4,
+      scope: 'local',
+      collapsed: false,
+      exposedInputs: ['revenue', 'costs'],
+      exposedOutputs: ['grossProfit', 'profitMargin'],
+      // Internal nodes (conceptual - would be separate graph in full implementation)
+      internalNodes: [
+        { id: 'gross', name: 'Gross Profit', expression: 'revenue - costs' },
+        { id: 'margin', name: 'Profit Margin', expression: '(grossProfit / revenue) * 100' }
+      ]
+    }, 
+    ['revenue', 'costs'], ['grossProfit', 'profitMargin']);
+
+  // SUBGRAPH 2: Growth Projector (encapsulates growth calculations)
+  const growthSubgraph = node('SUBGRAPH', '📦 Growth Projector', 300, 350, 
+    { 
+      subgraphId: 'growth-proj-subgraph',
+      description: 'Projects values over multiple years with compound growth',
+      nodeCount: 3,
+      scope: 'local',
+      collapsed: false,
+      exposedInputs: ['baseValue', 'growthRate'],
+      exposedOutputs: ['year1', 'year3', 'year5'],
+      internalNodes: [
+        { id: 'y1', name: 'Year 1', expression: 'baseValue * (1 + growthRate/100)' },
+        { id: 'y3', name: 'Year 3', expression: 'baseValue * Math.pow(1 + growthRate/100, 3)' },
+        { id: 'y5', name: 'Year 5', expression: 'baseValue * Math.pow(1 + growthRate/100, 5)' }
+      ]
+    }, 
+    ['baseValue', 'growthRate'], ['year1', 'year3', 'year5']);
+
+  // Aggregator that combines subgraph outputs
+  const summaryAgg = node('AGGREGATOR', '∑ Financial Summary', 550, 200, 
+    { 
+      operation: 'custom',
+      expression: '{ profitMargin: $inputs.margin, projectedYear5: $inputs.year5 }'
+    }, 
+    ['margin', 'year5'], ['summary']);
+
+  // Decision node based on profitability
+  const decision = node('DECISION', '❓ Investment Decision', 550, 350, 
+    { 
+      condition: '$inputs.margin > 15',
+      trueLabel: '✅ Invest',
+      falseLabel: '⚠️ Review'
+    }, 
+    ['margin'], ['decision']);
+
+  // Transformer showing feedback concept (value adjustment)
+  const feedbackAdjust = node('TRANSFORMER', '🔄 Feedback Adjust', 300, 500, 
+    { 
+      expression: '$inputs.costs * (1 - $inputs.margin / 200)',
+      description: 'Simulates feedback: adjust costs based on margin'
+    }, 
+    ['costs', 'margin'], ['adjustedCosts']);
+
+  // Outputs
+  const profitOutput = node('OUTPUT', '📊 Profit Metrics', 750, 150, 
+    { description: 'Current profit calculations' }, ['value'], []);
+  const projectionOutput = node('OUTPUT', '📈 5-Year Projection', 750, 280, 
+    { description: 'Revenue projection' }, ['value'], []);
+  const decisionOutput = node('OUTPUT', '🎯 Recommendation', 750, 400, 
+    { description: 'Investment recommendation' }, ['value'], []);
+
+  const nodes = [
+    revenue, costs, growthRate,
+    profitSubgraph, growthSubgraph,
+    summaryAgg, decision, feedbackAdjust,
+    profitOutput, projectionOutput, decisionOutput
+  ];
+
+  const edges = [
+    // Inputs to Profit Subgraph
+    edge(revenue, profitSubgraph, 0, 0),
+    edge(costs, profitSubgraph, 0, 1),
+    // Inputs to Growth Subgraph  
+    edge(revenue, growthSubgraph, 0, 0),
+    edge(growthRate, growthSubgraph, 0, 1),
+    // Subgraph outputs to aggregator
+    edge(profitSubgraph, summaryAgg, 1, 0), // profitMargin -> margin
+    edge(growthSubgraph, summaryAgg, 2, 1), // year5 -> year5
+    // Profit margin to decision
+    edge(profitSubgraph, decision, 1, 0),
+    // Feedback loop (costs adjustment based on margin)
+    edge(costs, feedbackAdjust, 0, 0),
+    edge(profitSubgraph, feedbackAdjust, 1, 1),
+    // Outputs
+    edge(profitSubgraph, profitOutput, 0, 0),
+    edge(growthSubgraph, projectionOutput, 2, 0),
+    edge(decision, decisionOutput, 0, 0),
+  ];
+
+  const g = graph(
+    '🆕 Simple Subgraph Demo',
+    'Easy visual demo of hierarchical graphs: SUBGRAPH nodes (📦) encapsulate logic, feedback loops (🔄) adjust values, drill-down shows nested structure.',
+    nodes, edges
+  );
+
+  // Add hierarchical metadata
+  g.metadata = {
+    hierarchical: {
+      depth: 2,
+      subgraphs: ['profit-calc-subgraph', 'growth-proj-subgraph'],
+      feedbackLoops: [{
+        id: 'cost-adjustment-loop',
+        name: 'Cost Adjustment Feedback',
+        sourceNode: 'profitSubgraph',
+        targetNode: 'feedbackAdjust',
+        transform: 'direct',
+        delay: 1,
+        enabled: true
+      }]
+    },
+    features: ['subgraph', 'feedback', 'decision'],
+    complexity: 'intermediate',
+    tutorial: true
+  };
+  
+  return g;
+}
+
 // Export individual sample generators for lazy loading
 export const advancedSampleGenerators = {
   'compound-interest': () => { idCounter = 1000; return createCompoundInterest(); },
@@ -1055,6 +1193,7 @@ export const advancedSampleGenerators = {
   'multi-dim-demo': () => { idCounter = 1600; return createMultiDimensionalDemo(); },
   'natcat-risk': () => { idCounter = 2000; return createNatCatRiskModel(); },
   'hierarchical-supply-chain': () => { idCounter = 2500; return createHierarchicalSupplyChain(); },
+  'simple-subgraph-demo': () => { idCounter = 2600; return createSimpleSubgraphDemo(); },
 };
 
 // Legacy function - generates ALL advanced graphs at once (avoid for performance)
@@ -1070,6 +1209,7 @@ export function getAdvancedSampleGraphs(): Graph[] {
     createMultiDimensionalDemo(),
     createNatCatRiskModel(),
     createHierarchicalSupplyChain(),
+    createSimpleSubgraphDemo(),
   ];
 }
 
@@ -1083,4 +1223,5 @@ export const advancedSampleDescriptions = [
   { name: 'Multi-Dimensional Data Model', description: 'Hierarchical nested data with $params and $node', complexity: 'Advanced', nodeCount: 10 },
   { name: 'NatCat Portfolio Risk & Pricing Model', description: 'Catastrophe risk with multi-region exposure, stochastic severity, reinsurance, pricing, and capital', complexity: 'Expert', nodeCount: 33 },
   { name: 'Hierarchical Supply Chain with Feedback', description: '🆕 SubGraph hierarchy + PID feedback loops + convergence detection', complexity: 'Expert', nodeCount: 23 },
+  { name: '🆕 Simple Subgraph Demo', description: '📦 Easy intro to subgraphs, feedback loops, and hierarchical modeling', complexity: 'Intermediate', nodeCount: 11 },
 ];

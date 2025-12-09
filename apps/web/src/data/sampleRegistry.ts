@@ -39,6 +39,10 @@ export const sampleCatalog: SampleInfo[] = [
   { id: 'expression-demo', name: 'Expression Variables Demo', description: 'Shows $inputs, $node, $params, $iteration, $time', complexity: 'Beginner', nodeCount: 10, category: 'Demo' },
   { id: 'multi-dim-demo', name: 'Multi-Dimensional Data Model', description: 'Hierarchical nested data with $params and $node', complexity: 'Advanced', nodeCount: 10, category: 'Demo' },
   { id: 'natcat-risk', name: 'NatCat Portfolio Risk & Pricing Model', description: 'Catastrophe risk with multi-region exposure, stochastic severity, reinsurance, pricing, and capital', complexity: 'Expert', nodeCount: 33, category: 'Risk' },
+  { id: 'hierarchical-supply-chain', name: '🆕 Hierarchical Supply Chain with Feedback', description: 'SubGraph hierarchy + PID feedback loops + convergence detection', complexity: 'Expert', nodeCount: 23, category: 'Demo' },
+  
+  // NEW: Simple Subgraph Demo - first in list for easy access
+  { id: 'simple-subgraph-demo', name: '⭐ Simple Subgraph Demo', description: '📦 Easy intro to subgraphs, feedback loops, and hierarchical modeling', complexity: 'Intermediate', nodeCount: 11, category: 'Demo' },
 ];
 
 // Get a single sample graph by ID (lazy - generates on demand)

@@ -155,6 +155,11 @@ function CustomNodeComponent({ data, selected }: NodeProps<CustomNodeData>) {
           </div>
         ) : null}
         
+        {/* SUBGRAPH node special rendering */}
+        {data.type === 'SUBGRAPH' ? (
+          <SubgraphDetails nodeData={nodeData} />
+        ) : null}
+        
         {/* Show computed output if available */}
         {data.computedOutput !== undefined && (
           <div className="flex justify-between border-t pt-1 mt-1 border-gray-200">
@@ -198,6 +203,38 @@ function CustomNodeComponent({ data, selected }: NodeProps<CustomNodeData>) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Subgraph details component for SUBGRAPH node type
+function SubgraphDetails({ nodeData }: { nodeData: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1">
+      {nodeData.subgraphId ? (
+        <div className="flex justify-between">
+          <span className="text-gray-500">Graph:</span>
+          <span className="font-mono text-xs truncate max-w-[80px]">{String(nodeData.subgraphId)}</span>
+        </div>
+      ) : null}
+      {nodeData.nodeCount !== undefined ? (
+        <div className="flex justify-between">
+          <span className="text-gray-500">Nodes:</span>
+          <span className="font-mono">{String(nodeData.nodeCount)}</span>
+        </div>
+      ) : null}
+      <button 
+        className="w-full mt-1 px-2 py-1 bg-indigo-500 text-white text-xs rounded hover:bg-indigo-600 transition-colors flex items-center justify-center gap-1"
+        onClick={(e) => {
+          e.stopPropagation();
+          // TODO: Implement drill-down navigation
+          console.log('Drill into subgraph:', nodeData.subgraphId);
+          alert(`🔍 Drill-down into subgraph: ${nodeData.subgraphId || 'unnamed'}\n\nThis feature is coming soon!`);
+        }}
+      >
+        <span>🔍</span>
+        <span>Drill Down</span>
+      </button>
     </div>
   );
 }

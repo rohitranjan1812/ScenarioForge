@@ -6,10 +6,12 @@ import { PropertiesPanel } from './components/panels/PropertiesPanel';
 import { SimulationPanel } from './components/panels/SimulationPanel';
 import { GlobalParamsPanel } from './components/panels/GlobalParamsPanel';
 import { GraphSelector } from './components/panels/GraphSelector';
+import { FeedbackLoopsPanel } from './components/panels/FeedbackLoopsPanel';
+import { HierarchyPanel } from './components/panels/HierarchyPanel';
 import { useGraphStore } from './stores/graphStore';
 import 'reactflow/dist/style.css';
 
-type Panel = 'properties' | 'params' | 'simulation';
+type Panel = 'properties' | 'params' | 'simulation' | 'feedbackLoops' | 'hierarchy';
 
 export default function App() {
   const [activePanel, setActivePanel] = useState<Panel>('properties');
@@ -126,6 +128,26 @@ export default function App() {
           >
             Simulation
           </button>
+          <button
+            onClick={() => setActivePanel('hierarchy')}
+            className={`px-3 py-1 rounded text-sm ${
+              activePanel === 'hierarchy'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            Hierarchy
+          </button>
+          <button
+            onClick={() => setActivePanel('feedbackLoops')}
+            className={`px-3 py-1 rounded text-sm ${
+              activePanel === 'feedbackLoops'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            Feedback Loops
+          </button>
         </div>
 
         {/* Canvas */}
@@ -136,11 +158,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* Right Sidebar - Properties/Params/Simulation */}
+      {/* Right Sidebar - Properties/Params/Simulation/Hierarchy/FeedbackLoops */}
       <div className="w-80 bg-gray-800 border-l border-gray-700 overflow-y-auto">
         {activePanel === 'properties' && <PropertiesPanel />}
         {activePanel === 'params' && <GlobalParamsPanel />}
         {activePanel === 'simulation' && <SimulationPanel />}
+        {activePanel === 'hierarchy' && <HierarchyPanel />}
+        {activePanel === 'feedbackLoops' && <FeedbackLoopsPanel />}
       </div>
     </div>
   );

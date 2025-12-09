@@ -193,10 +193,17 @@ export function GraphCanvas() {
     async (event: React.DragEvent) => {
       event.preventDefault();
       
-      if (!currentGraph) return;
+      if (!currentGraph) {
+        console.log('No current graph for drop');
+        return;
+      }
       
       const type = event.dataTransfer.getData('application/node-type') as NodeType;
-      if (!type) return;
+      console.log('Dropped node type:', type);
+      if (!type) {
+        console.log('No node type in drag data');
+        return;
+      }
       
       // Convert screen coordinates to flow coordinates
       const position = screenToFlowPosition({
@@ -236,7 +243,11 @@ export function GraphCanvas() {
   }
 
   return (
-    <div className="h-full w-full" onDrop={onDrop} onDragOver={onDragOver}>
+    <div 
+      className="h-full w-full"
+      onDrop={onDrop}
+      onDragOver={onDragOver}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -246,6 +257,8 @@ export function GraphCanvas() {
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         fitView
         snapToGrid
@@ -268,6 +281,7 @@ export function GraphCanvas() {
               DECISION: '#db2777',
               CONSTANT: '#6b7280',
               CONSTRAINT: '#0d9488',
+              SUBGRAPH: '#6366f1',
             };
             return colors[node.data?.type] ?? '#6b7280';
           }}
