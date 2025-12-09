@@ -55,6 +55,7 @@ export function createNode(input: CreateNodeInput): NodeDefinition {
     computeFunction: input.computeFunction,
     inputPorts: (input.inputPorts ?? []).map(createPort),
     outputPorts: (input.outputPorts ?? []).map(createPort),
+    subgraphId: input.subgraphId,
     tags: input.tags ?? [],
     color: input.color,
     icon: input.icon,

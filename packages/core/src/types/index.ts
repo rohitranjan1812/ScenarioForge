@@ -111,6 +111,7 @@ export interface CreateNodeInput {
   computeFunction?: string;
   inputPorts?: PortDefinition[];
   outputPorts?: PortDefinition[];
+  subgraphId?: string;
   tags?: string[];
   color?: string;
   icon?: string;
@@ -125,6 +126,7 @@ export interface UpdateNodeInput {
   computeFunction?: string;
   inputPorts?: Port[];
   outputPorts?: Port[];
+  subgraphId?: string;
   tags?: string[];
   color?: string;
   icon?: string;
