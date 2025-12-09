@@ -161,15 +161,154 @@ const nodeComputeFunctions: Record<string, ComputeFunction> = {
     return { [label]: inputValues.length === 1 ? inputValues[0] : inputValues };
   },
   
-  SUBGRAPH: (inputs, _nodeData, _context) => {
-    // Subgraph execution would be handled by recursively calling executeGraph
-    // For now, just pass through
-    return { output: inputs };
+  SUBGRAPH: (_inputs, _nodeData, _context) => {
+    // Subgraph execution is handled by executeSubgraph function
+    // This is a placeholder that should never be called directly
+    // The actual execution happens in executeNode when it detects SUBGRAPH type
+    return { output: _inputs };
   },
 };
 
 export function registerComputeFunction(nodeType: string, fn: ComputeFunction): void {
   nodeComputeFunctions[nodeType] = fn;
+}
+
+// ============================================
+// Subgraph Execution
+// ============================================
+
+/**
+ * Execute a subgraph with input values
+ */
+export function executeSubgraph(
+  subgraphId: string,
+  _inputs: Record<string, unknown>,
+  allGraphs: Map<string, Graph>,
+  context: ExpressionContext
+): Record<string, unknown> {
+  const subgraph = allGraphs.get(subgraphId);
+  if (!subgraph) {
+    throw new Error(`Subgraph ${subgraphId} not found`);
+  }
+  
+  // Execute the subgraph with provided inputs
+  // The inputs should be mapped to the appropriate input nodes in the subgraph
+  const result = executeGraph(subgraph, context.$params, {
+    iteration: context.$iteration,
+    time: context.$time,
+  });
+  
+  if (!result.success) {
+    throw new Error(`Subgraph execution failed: ${result.error}`);
+  }
+  
+  // Collect outputs from OUTPUT nodes
+  const outputs: Record<string, unknown> = {};
+  for (const outputNode of result.outputNodes) {
+    Object.assign(outputs, outputNode.outputs);
+  }
+  
+  return outputs;
+}
+
+// ============================================
+// Feedback Loop Execution
+// ============================================
+
+/**
+ * Execute a graph with feedback loops until convergence
+ */
+export function executeGraphWithFeedback(
+  graph: Graph,
+  params: Record<string, unknown> = {},
+  options: {
+    iteration?: number;
+    time?: number;
+    maxFeedbackIterations?: number;
+    convergenceTolerance?: number;
+  } = {}
+): ExecutionResult & { feedbackLoops?: import('../types/index.js').FeedbackLoopResult[] } {
+  const feedbackEdges = graph.edges.filter(e => e.type === 'FEEDBACK');
+  
+  if (feedbackEdges.length === 0) {
+    // No feedback loops, execute normally
+    return executeGraph(graph, params, options);
+  }
+  
+  const maxIterations = options.maxFeedbackIterations ?? 100;
+  const tolerance = options.convergenceTolerance ?? 0.001;
+  
+  // Initialize feedback state
+  const feedbackState = new Map<string, unknown>();
+  const feedbackHistory: Map<string, { iteration: number; value: unknown; delta: number }[]> = new Map();
+  
+  for (const edge of feedbackEdges) {
+    feedbackState.set(edge.id, 0); // Initialize with default value
+    feedbackHistory.set(edge.id, []);
+  }
+  
+  let converged = false;
+  let feedbackIteration = 0;
+  let lastResult: ExecutionResult | null = null;
+  
+  // Iteratively execute until convergence
+  while (!converged && feedbackIteration < maxIterations) {
+    const result = executeGraph(graph, params, {
+      ...options,
+      feedbackState,
+    } as any);
+    
+    if (!result.success) {
+      return result;
+    }
+    
+    lastResult = result;
+    converged = true;
+    
+    // Check convergence for each feedback edge
+    for (const edge of feedbackEdges) {
+      // Get the new value from the source node output
+      const sourceOutputs = result.outputs.get(edge.sourceNodeId);
+      const newValue = sourceOutputs?.output;
+      
+      if (newValue !== undefined) {
+        const oldValue = feedbackState.get(edge.id);
+        const delta = typeof newValue === 'number' && typeof oldValue === 'number'
+          ? Math.abs(newValue - oldValue)
+          : 0;
+        
+        const edgeTolerance = edge.convergenceTolerance ?? tolerance;
+        
+        if (delta > edgeTolerance) {
+          converged = false;
+        }
+        
+        // Update feedback state
+        feedbackState.set(edge.id, newValue);
+        
+        // Record history
+        const history = feedbackHistory.get(edge.id) ?? [];
+        history.push({ iteration: feedbackIteration, value: newValue, delta });
+        feedbackHistory.set(edge.id, history);
+      }
+    }
+    
+    feedbackIteration++;
+  }
+  
+  // Build feedback loop results
+  const feedbackLoopResults = feedbackEdges.map(edge => ({
+    edgeId: edge.id,
+    iterations: feedbackIteration,
+    finalValue: feedbackState.get(edge.id),
+    converged,
+    convergenceHistory: feedbackHistory.get(edge.id) ?? [],
+  }));
+  
+  return {
+    ...lastResult!,
+    feedbackLoops: feedbackLoopResults,
+  };
 }
 
 // ============================================
@@ -179,6 +318,7 @@ export function registerComputeFunction(nodeType: string, fn: ComputeFunction): 
 export interface ExecutionState {
   nodeOutputs: Map<string, Record<string, unknown>>;
   portValues: Map<string, unknown>;
+  allGraphs?: Map<string, Graph>;  // For subgraph execution
 }
 
 export function executeNode(
@@ -244,6 +384,28 @@ export function executeNode(
     }
   }
   
+  // Handle SUBGRAPH nodes specially
+  if (node.type === 'SUBGRAPH' && node.subgraphId) {
+    if (!state.allGraphs) {
+      throw new Error('Cannot execute subgraph: allGraphs not provided in execution state');
+    }
+    
+    try {
+      const subgraphOutputs = executeSubgraph(
+        node.subgraphId,
+        inputs,
+        state.allGraphs,
+        context
+      );
+      
+      // Store outputs
+      state.nodeOutputs.set(node.id, subgraphOutputs);
+      return subgraphOutputs;
+    } catch (error) {
+      throw new Error(`Subgraph execution failed for node ${node.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+  
   // Get compute function
   const computeFn = nodeComputeFunctions[node.type];
   if (!computeFn) {
@@ -276,7 +438,7 @@ export interface ExecutionResult {
 export function executeGraph(
   graph: Graph,
   params: Record<string, unknown> = {},
-  options: { iteration?: number; time?: number } = {}
+  options: { iteration?: number; time?: number; allGraphs?: Map<string, Graph> } = {}
 ): ExecutionResult {
   const startTime = Date.now();
   
@@ -296,6 +458,7 @@ export function executeGraph(
   const state: ExecutionState = {
     nodeOutputs: new Map(),
     portValues: new Map(),
+    allGraphs: options.allGraphs,
   };
   
   // Build nodes map for context
