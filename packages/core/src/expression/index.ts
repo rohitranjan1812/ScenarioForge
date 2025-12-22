@@ -4,6 +4,23 @@
 import type { ExpressionContext, DistributionConfig } from '../types/index.js';
 
 // ============================================
+// Security Constants
+// ============================================
+
+// Dangerous identifiers that could be used for code injection or prototype pollution
+const DANGEROUS_IDENTIFIERS = new Set([
+  'constructor',
+  '__proto__',
+  'prototype',
+  'eval',
+  'Function',
+  '__defineGetter__',
+  '__defineSetter__',
+  '__lookupGetter__',
+  '__lookupSetter__',
+]);
+
+// ============================================
 // Tokenizer
 // ============================================
 
@@ -65,7 +82,17 @@ function tokenize(expression: string): Token[] {
       while (pos < expression.length && expression[pos] !== quote) {
         if (expression[pos] === '\\' && pos + 1 < expression.length) {
           pos++;
-          str += expression[pos++];
+          const escapeChar = expression[pos++];
+          // Handle common escape sequences
+          switch (escapeChar) {
+            case 'n': str += '\n'; break;
+            case 't': str += '\t'; break;
+            case 'r': str += '\r'; break;
+            case '\\': str += '\\'; break;
+            case '"': str += '"'; break;
+            case "'": str += "'"; break;
+            default: str += escapeChar; break;
+          }
         } else {
           str += expression[pos++];
         }
@@ -91,6 +118,11 @@ function tokenize(expression: string): Token[] {
       let name = '';
       while (pos < expression.length && /[a-zA-Z0-9_]/.test(expression[pos])) {
         name += expression[pos++];
+      }
+      
+      // Security check for dangerous identifiers
+      if (DANGEROUS_IDENTIFIERS.has(name)) {
+        throw new Error(`Access to '${name}' is not allowed for security reasons`);
       }
       
       if (name === 'true') {
@@ -460,6 +492,9 @@ const MATH_FUNCTIONS: Record<string, BuiltinFunction> = {
   // Constants
   PI: () => Math.PI,
   E: () => Math.E,
+  
+  // Random
+  random: () => Math.random(),
 };
 
 const STATISTICAL_FUNCTIONS: Record<string, BuiltinFunction> = {
@@ -541,6 +576,7 @@ const STRING_FUNCTIONS: Record<string, BuiltinFunction> = {
   upper: (s: unknown) => String(s).toUpperCase(),
   lower: (s: unknown) => String(s).toLowerCase(),
   trim: (s: unknown) => String(s).trim(),
+  length: (s: unknown) => Array.isArray(s) ? s.length : String(s).length,
   substring: (s: unknown, start: unknown, end?: unknown) => 
     String(s).substring(Number(start), end !== undefined ? Number(end) : undefined),
   replace: (s: unknown, search: unknown, replacement: unknown) => 
@@ -675,7 +711,11 @@ function evaluateNode(node: ASTNode, context: ExpressionContext): unknown {
 // ============================================
 
 export function evaluate(expression: string, context: ExpressionContext): unknown {
-  const parser = new Parser(expression);
+  // Preprocess expression to support Math.function syntax
+  // Convert Math.sqrt, Math.abs, etc. to sqrt, abs, etc.
+  let processedExpression = expression.replace(/Math\./g, '');
+  
+  const parser = new Parser(processedExpression);
   const ast = parser.parse();
   return evaluateNode(ast, context);
 }
@@ -747,6 +787,53 @@ export function sampleDistribution(config: DistributionConfig): number {
     case 'uniform':
       return (params.min ?? 0) + rng.next() * ((params.max ?? 1) - (params.min ?? 0));
     
+    case 'uniformInt':
+    case 'uniform_int': {
+      const min = Math.ceil(params.min ?? 0);
+      const max = Math.floor(params.max ?? 10);
+      return Math.floor(min + rng.next() * (max - min + 1));
+    }
+    
+    case 'bernoulli': {
+      const p = params.p ?? params.probability ?? 0.5;
+      return rng.next() < p ? 1 : 0;
+    }
+    
+    case 'beta': {
+      // Use the transformation method for beta distribution
+      // For simplicity, approximate with the mean for alpha/(alpha+beta)
+      // A proper implementation would use the gamma function
+      const alpha = params.alpha ?? 2;
+      const beta = params.beta ?? 2;
+      // Joehnk's method for beta distribution
+      let u1, u2, s;
+      do {
+        u1 = Math.pow(rng.next(), 1 / alpha);
+        u2 = Math.pow(rng.next(), 1 / beta);
+        s = u1 + u2;
+      } while (s > 1);
+      return u1 / s;
+    }
+    
+    case 'truncatedNormal':
+    case 'truncated_normal': {
+      // Generate truncated normal distribution
+      const mean = params.mean ?? 0;
+      const stdDev = params.stdDev ?? params.stddev ?? 1;
+      const minVal = params.min ?? -Infinity;
+      const maxVal = params.max ?? Infinity;
+      
+      // Rejection sampling
+      let sample;
+      do {
+        const u1 = rng.next();
+        const u2 = rng.next();
+        const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        sample = mean + stdDev * z;
+      } while (sample < minVal || sample > maxVal);
+      return sample;
+    }
+    
     case 'triangular': {
       const a = params.min ?? 0;
       const b = params.max ?? 1;
@@ -760,7 +847,9 @@ export function sampleDistribution(config: DistributionConfig): number {
       }
     }
     
-    case 'lognormal': {
+    case 'lognormal':
+    case 'logNormal':
+    case 'log_normal': {
       const u1 = rng.next();
       const u2 = rng.next();
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);

@@ -367,15 +367,22 @@ export interface UpdateGraphInput {
 export type DistributionType = 
   | 'normal'
   | 'uniform'
+  | 'uniformInt'
+  | 'uniform_int'
   | 'triangular'
   | 'lognormal'
+  | 'logNormal'
+  | 'log_normal'
   | 'exponential'
   | 'beta'
   | 'gamma'
   | 'poisson'
   | 'binomial'
   | 'discrete'
-  | 'compound';  // Compound frequency-severity distribution
+  | 'compound'
+  | 'bernoulli'
+  | 'truncatedNormal'
+  | 'truncated_normal';
 
 export interface DistributionConfig {
   type: DistributionType;

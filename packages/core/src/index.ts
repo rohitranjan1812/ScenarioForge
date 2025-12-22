@@ -39,6 +39,7 @@ export * from './expression/index.js';
 // Export simulation utilities
 export {
   executeGraph,
+  executeGraphSync,
   runMonteCarloSimulation,
   calculateRiskMetrics,
   runSensitivityAnalysis,

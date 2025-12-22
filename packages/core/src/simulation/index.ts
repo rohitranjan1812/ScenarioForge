@@ -60,8 +60,12 @@ const nodeComputeFunctions: Record<string, ComputeFunction> = {
   },
   
   AGGREGATOR: (inputs, nodeData, _context) => {
-    const method = nodeData.method as string ?? 'sum';
+    const method = (nodeData.method as string ?? nodeData.aggregationType as string ?? 'sum').toLowerCase();
     const values = Object.values(inputs).flat().map(Number).filter(n => !isNaN(n));
+    
+    if (values.length === 0) {
+      return { output: 0, result: 0 };
+    }
     
     let result: number;
     switch (method) {
@@ -69,6 +73,7 @@ const nodeComputeFunctions: Record<string, ComputeFunction> = {
         result = values.reduce((a, b) => a + b, 0);
         break;
       case 'mean':
+      case 'avg':
       case 'average':
         result = values.reduce((a, b) => a + b, 0) / values.length;
         break;
@@ -84,23 +89,44 @@ const nodeComputeFunctions: Record<string, ComputeFunction> = {
       case 'count':
         result = values.length;
         break;
+      case 'stddev':
+      case 'std': {
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+        const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
+        result = Math.sqrt(squaredDiffs.reduce((a, b) => a + b, 0) / values.length);
+        break;
+      }
       default:
         result = values.reduce((a, b) => a + b, 0);
     }
     
-    return { output: result };
+    return { output: result, result };
   },
   
   DISTRIBUTION: (_inputs, nodeData, _context) => {
+    // Handle multiple formats:
+    // 1. { distributionType, parameters: { mean, stddev } }
+    // 2. { distributionType, mean, stddev } (flat)
+    // 3. { distributionType, params: { mean, stddev } } (advanced-nodes test format)
+    const flatParams = { ...nodeData };
+    delete flatParams.distributionType;
+    delete flatParams.parameters;
+    delete flatParams.params;
+    delete flatParams.values;
+    delete flatParams.probabilities;
+    
     const config: DistributionConfig = {
       type: nodeData.distributionType as DistributionConfig['type'] ?? 'normal',
-      parameters: nodeData.parameters as Record<string, number> ?? {},
+      parameters: (nodeData.parameters as Record<string, number>) 
+                  ?? (nodeData.params as Record<string, number>) 
+                  ?? flatParams,
       values: nodeData.values as unknown[],
       probabilities: nodeData.probabilities as number[],
     };
     
     const sample = sampleDistribution(config);
-    return { output: sample };
+    // Return both 'sample' (for port name) and 'output' (fallback)
+    return { sample, output: sample };
   },
   
   DECISION: (inputs, nodeData, context) => {
@@ -123,19 +149,23 @@ const nodeComputeFunctions: Record<string, ComputeFunction> = {
     }
   },
   
-  CONSTRAINT: (inputs, nodeData, context) => {
-    const expression = nodeData.expression as string;
-    if (!expression) {
-      return { satisfied: true, violation: 0 };
+  CONSTRAINT: (inputs, nodeData, _context) => {
+    // Get the input value - either from an expression or directly from inputs
+    let numValue: number;
+    const expression = nodeData.expression as string | undefined;
+    
+    if (expression) {
+      const value = evaluate(expression, {
+        ..._context,
+        $node: nodeData,
+        $inputs: inputs,
+      });
+      numValue = Number(value);
+    } else {
+      // Use direct input value
+      numValue = Number(inputs.value ?? 0);
     }
     
-    const value = evaluate(expression, {
-      ...context,
-      $node: nodeData,
-      $inputs: inputs,
-    });
-    
-    const numValue = Number(value);
     const min = nodeData.min as number | undefined;
     const max = nodeData.max as number | undefined;
     
@@ -166,6 +196,99 @@ const nodeComputeFunctions: Record<string, ComputeFunction> = {
     // For now, just pass through
     return { output: inputs };
   },
+  
+  // Conditional nodes for IF/SWITCH/CLAMP operations
+  CONDITIONAL: (inputs, nodeData, _context) => {
+    const conditionType = nodeData.conditionType as string ?? 'IF';
+    
+    switch (conditionType) {
+      case 'IF': {
+        const condition = inputs.condition;
+        const trueValue = inputs.trueValue ?? inputs.ifTrue ?? nodeData.trueValue ?? 1;
+        const falseValue = inputs.falseValue ?? inputs.ifFalse ?? nodeData.falseValue ?? 0;
+        return { output: condition ? trueValue : falseValue, result: condition ? trueValue : falseValue };
+      }
+      case 'CLAMP': {
+        const value = Number(inputs.value ?? 0);
+        const minVal = Number(inputs.min ?? nodeData.min ?? -Infinity);
+        const maxVal = Number(inputs.max ?? nodeData.max ?? Infinity);
+        const clamped = Math.max(minVal, Math.min(maxVal, value));
+        return { output: clamped, result: clamped };
+      }
+      case 'SWITCH': {
+        const selector = Number(inputs.selector ?? 0);
+        const cases = nodeData.cases as Record<string, unknown> ?? {};
+        const defaultValue = nodeData.default ?? inputs.default ?? 0;
+        const result = cases[selector.toString()] ?? defaultValue;
+        return { output: result, result };
+      }
+      default:
+        return { output: Object.values(inputs)[0] ?? 0 };
+    }
+  },
+  
+  // Lookup table node for interpolation
+  LOOKUP: (inputs, nodeData, _context) => {
+    const key = Number(inputs.key ?? inputs.x ?? 0);
+    const table = nodeData.table as { key: number; value: number }[] ?? [];
+    const keys = nodeData.keys as number[] ?? table.map(t => t.key);
+    const values = nodeData.values as number[] ?? table.map(t => t.value);
+    
+    if (keys.length === 0 || values.length === 0) {
+      return { output: 0, value: 0 };
+    }
+    
+    // Find surrounding keys for interpolation
+    let lowerIdx = 0;
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i] <= key) lowerIdx = i;
+    }
+    
+    // Clamp to bounds
+    if (key <= keys[0]) return { output: values[0], value: values[0] };
+    if (key >= keys[keys.length - 1]) return { output: values[values.length - 1], value: values[values.length - 1] };
+    
+    // Linear interpolation
+    const upperIdx = Math.min(lowerIdx + 1, keys.length - 1);
+    const t = (key - keys[lowerIdx]) / (keys[upperIdx] - keys[lowerIdx] || 1);
+    const interpolated = values[lowerIdx] + t * (values[upperIdx] - values[lowerIdx]);
+    return { output: interpolated, value: interpolated };
+  },
+  
+  // Time series node
+  TIMESERIES: (inputs, nodeData, _context) => {
+    const time = Number(inputs.time ?? inputs.t ?? 0);
+    const seriesValues = nodeData.values as number[] ?? [];
+    const startTime = Number(nodeData.startTime ?? 0);
+    const timeStep = Number(nodeData.timeStep ?? 1);
+    
+    if (seriesValues.length === 0) {
+      return { output: 0, value: 0 };
+    }
+    
+    // Calculate index from time
+    const floatIndex = (time - startTime) / timeStep;
+    const lowerIdx = Math.floor(floatIndex);
+    const upperIdx = Math.ceil(floatIndex);
+    
+    // Clamp to bounds
+    if (lowerIdx < 0) return { output: seriesValues[0], value: seriesValues[0] };
+    if (upperIdx >= seriesValues.length) return { output: seriesValues[seriesValues.length - 1], value: seriesValues[seriesValues.length - 1] };
+    
+    // Interpolate if needed
+    if (lowerIdx === upperIdx || lowerIdx >= seriesValues.length - 1) {
+      return { output: seriesValues[Math.min(lowerIdx, seriesValues.length - 1)], value: seriesValues[Math.min(lowerIdx, seriesValues.length - 1)] };
+    }
+    
+    const t = floatIndex - lowerIdx;
+    const interpolated = seriesValues[lowerIdx] + t * (seriesValues[upperIdx] - seriesValues[lowerIdx]);
+    return { output: interpolated, value: interpolated };
+  },
+  
+  // Iterator node for Monte Carlo context
+  ITERATOR: (_inputs, _nodeData, context) => {
+    return { output: context.$iteration ?? 0, iteration: context.$iteration ?? 0 };
+  },
 };
 
 export function registerComputeFunction(nodeType: string, fn: ComputeFunction): void {
@@ -187,17 +310,26 @@ export function executeNode(
   state: ExecutionState,
   context: ExpressionContext
 ): Record<string, unknown> {
+  // Helper to get edge properties supporting both formats
+  const getEdgeSourceNodeId = (e: Record<string, unknown>) => (e.sourceNodeId ?? e.source) as string;
+  const getEdgeSourcePortId = (e: Record<string, unknown>) => (e.sourcePortId ?? e.sourceHandle) as string;
+  const getEdgeTargetPortId = (e: Record<string, unknown>) => (e.targetPortId ?? e.targetHandle) as string;
+  
   // Gather inputs from connected edges
   const inputs: Record<string, unknown> = {};
   const inputEdges = getNodeInputEdges(graph, node.id);
   
   for (const edge of inputEdges) {
-    const sourceOutputs = state.nodeOutputs.get(edge.sourceNodeId);
+    const sourceNodeId = getEdgeSourceNodeId(edge as unknown as Record<string, unknown>);
+    const sourcePortId = getEdgeSourcePortId(edge as unknown as Record<string, unknown>);
+    const targetPortId = getEdgeTargetPortId(edge as unknown as Record<string, unknown>);
+    
+    const sourceOutputs = state.nodeOutputs.get(sourceNodeId);
     if (sourceOutputs) {
       // Find the source port to get the output key
-      const sourceNode = graph.nodes.find(n => n.id === edge.sourceNodeId);
-      const sourcePort = sourceNode?.outputPorts.find(p => p.id === edge.sourcePortId);
-      const targetPort = node.inputPorts.find(p => p.id === edge.targetPortId);
+      const sourceNode = graph.nodes.find(n => n.id === sourceNodeId);
+      const sourcePort = sourceNode?.outputPorts.find(p => p.id === sourcePortId);
+      const targetPort = node.inputPorts.find(p => p.id === targetPortId);
       
       // Get value from source output
       let value: unknown;
@@ -222,7 +354,7 @@ export function executeNode(
       }
       
       // Store by target port name or ID
-      const inputKey = targetPort?.name ?? edge.targetPortId;
+      const inputKey = targetPort?.name ?? targetPortId;
       
       // Handle multiple connections to same port
       if (targetPort?.multiple && inputs[inputKey] !== undefined) {
@@ -265,15 +397,84 @@ export function executeNode(
   return outputs;
 }
 
+/** Result for a single iteration in multi-iteration execution */
+export interface IterationResult {
+  iteration: number;
+  outputs: Record<string, number>;
+}
+
 export interface ExecutionResult {
   success: boolean;
   outputs: Map<string, Record<string, unknown>>;
   outputNodes: { nodeId: string; nodeName: string; outputs: Record<string, unknown> }[];
   error?: string;
   executionTimeMs: number;
+  results?: IterationResult[]; // For multi-iteration runs
 }
 
+export interface ExecuteGraphOptions {
+  iteration?: number;
+  time?: number;
+  iterations?: number;
+  parameters?: Record<string, unknown>;
+}
+
+/**
+ * Execute a graph with optional multi-iteration support.
+ * For single execution, use executeGraphSync for better type inference.
+ */
 export function executeGraph(
+  graph: Graph,
+  paramsOrOptions: Record<string, unknown> | ExecuteGraphOptions = {},
+  options: { iteration?: number; time?: number } = {}
+): ExecutionResult | Promise<ExecutionResult> {
+  // Handle new API format: executeGraph(graph, { iterations, parameters })
+  if ('iterations' in paramsOrOptions && typeof paramsOrOptions.iterations === 'number') {
+    const iterations = paramsOrOptions.iterations;
+    const params = (paramsOrOptions.parameters as Record<string, unknown>) ?? {};
+    
+    // Run multiple iterations
+    return (async () => {
+      const startTime = Date.now();
+      const results: IterationResult[] = [];
+      
+      for (let i = 0; i < iterations; i++) {
+        const singleResult = executeGraphSync(graph, params, { iteration: i });
+        if (!singleResult.success) {
+          return {
+            ...singleResult,
+            results: results,
+          };
+        }
+        // Collect output values
+        const outputs: Record<string, number> = {};
+        for (const outNode of singleResult.outputNodes) {
+          for (const [key, value] of Object.entries(outNode.outputs)) {
+            outputs[key] = value as number;
+          }
+        }
+        results.push({ iteration: i, outputs });
+      }
+      
+      return {
+        success: true,
+        outputs: new Map(),
+        outputNodes: [],
+        results,
+        executionTimeMs: Date.now() - startTime,
+      };
+    })();
+  }
+  
+  // Legacy API: executeGraph(graph, params, options)
+  return executeGraphSync(graph, paramsOrOptions as Record<string, unknown>, options);
+}
+
+/**
+ * Synchronously execute a graph once.
+ * This is the preferred method for single executions as it provides better type inference.
+ */
+export function executeGraphSync(
   graph: Graph,
   params: Record<string, unknown> = {},
   options: { iteration?: number; time?: number } = {}
@@ -426,7 +627,7 @@ export function runMonteCarloSimulation(
       break;
     }
     
-    const execResult = executeGraph(graph, params, { iteration: i });
+    const execResult = executeGraphSync(graph, params, { iteration: i });
     
     if (!execResult.success) {
       return {
@@ -445,7 +646,8 @@ export function runMonteCarloSimulation(
       if (config.outputNodes.length === 0 || config.outputNodes.includes(outputNode.nodeId)) {
         for (const [key, value] of Object.entries(outputNode.outputs)) {
           if (typeof value === 'number') {
-            const statsKey = `${outputNode.nodeId}:${key}`;
+            // Use the output label/key directly for aggregation (for easier lookup)
+            const statsKey = key;
             
             // Use streaming aggregation
             if (!streamingStats.has(statsKey)) {
@@ -486,6 +688,18 @@ export function runMonteCarloSimulation(
     if (i > 0 && i % GC_INTERVAL_ITERATIONS === 0 && typeof global !== 'undefined' && global.gc) {
       global.gc();
     }
+  }
+  
+  // Final progress report
+  if (onProgress) {
+    onProgress({
+      simulationId: config.id,
+      status: 'completed',
+      progress: 100,
+      currentIteration: config.iterations,
+      totalIterations: config.iterations,
+      startedAt: new Date(startTime),
+    });
   }
   
   // Build aggregated metrics from streaming stats
@@ -538,12 +752,13 @@ export function calculateRiskMetrics(values: number[]): RiskMetrics {
   const n = sorted.length;
   
   if (n === 0) {
+    // Return NaN/Infinity for empty arrays (mathematically correct)
     const emptyMetric = {
-      mean: 0, median: 0, standardDeviation: 0, variance: 0,
-      skewness: 0, kurtosis: 0, min: 0, max: 0,
-      percentiles: { p5: 0, p10: 0, p25: 0, p50: 0, p75: 0, p90: 0, p95: 0, p99: 0 },
-      valueAtRisk: { var95: 0, var99: 0, var999: 0 },
-      conditionalVaR: { cvar95: 0, cvar99: 0 },
+      mean: NaN, median: NaN, standardDeviation: NaN, variance: NaN,
+      skewness: NaN, kurtosis: NaN, min: Infinity, max: -Infinity,
+      percentiles: { p5: NaN, p10: NaN, p25: NaN, p50: NaN, p75: NaN, p90: NaN, p95: NaN, p99: NaN },
+      valueAtRisk: { var95: NaN, var99: NaN, var999: NaN },
+      conditionalVaR: { cvar95: NaN, cvar99: NaN },
     };
     return emptyMetric;
   }
@@ -615,15 +830,54 @@ export function calculateRiskMetrics(values: number[]): RiskMetrics {
 // ============================================
 
 export interface SensitivityResult {
+  success: boolean;
   parameterId: string;
   nodeId: string;
   field: string;
   baseValue: number;
   sensitivity: number;  // Change in output per unit change in input
   elasticity: number;   // Percentage change in output per percentage change in input
-  values: { input: number; output: number }[];
+  dataPoints: { input: number; output: number }[];
+  values: { input: number; output: number }[]; // Alias for dataPoints
+  error?: string;
 }
 
+// Multi-parameter sensitivity result
+export interface MultiSensitivityResult {
+  success: boolean;
+  sensitivities: SensitivityResult[];
+  error?: string;
+}
+
+export interface SensitivityOptions {
+  parameterNodeId: string;
+  parameterField: string;
+  outputNodeId: string;
+  outputField: string;
+  range: [number, number];
+  steps?: number;
+}
+
+export interface MultiSensitivityOptions {
+  parameters: Array<{
+    nodeId: string;
+    field: string;
+    range: [number, number];
+    steps?: number;
+  }>;
+  baseConfig?: SimulationConfig;
+  outputNodeId?: string;
+  outputField?: string;
+}
+
+export function runSensitivityAnalysis(
+  graph: Graph,
+  options: SensitivityOptions
+): SensitivityResult;
+export function runSensitivityAnalysis(
+  graph: Graph,
+  options: MultiSensitivityOptions
+): MultiSensitivityResult;
 export function runSensitivityAnalysis(
   graph: Graph,
   parameterNodeId: string,
@@ -631,38 +885,105 @@ export function runSensitivityAnalysis(
   outputNodeId: string,
   outputField: string,
   range: [number, number],
+  steps?: number
+): SensitivityResult;
+export function runSensitivityAnalysis(
+  graph: Graph,
+  optionsOrNodeId: SensitivityOptions | MultiSensitivityOptions | string,
+  parameterField?: string,
+  outputNodeId?: string,
+  outputField?: string,
+  range?: [number, number],
   steps: number = 10
-): SensitivityResult {
-  const results: { input: number; output: number }[] = [];
-  const step = (range[1] - range[0]) / (steps - 1);
-  
-  // Find the parameter node
-  const paramNode = graph.nodes.find(n => n.id === parameterNodeId);
-  if (!paramNode) {
-    throw new Error(`Parameter node ${parameterNodeId} not found`);
+): SensitivityResult | MultiSensitivityResult {
+  // Handle multi-parameter format
+  if (typeof optionsOrNodeId === 'object' && 'parameters' in optionsOrNodeId) {
+    const multiOpts = optionsOrNodeId as MultiSensitivityOptions;
+    // Find output node if not specified
+    const outNode = multiOpts.outputNodeId 
+      ? graph.nodes.find(n => n.id === multiOpts.outputNodeId)
+      : graph.nodes.find(n => n.type === 'OUTPUT');
+    const outField = multiOpts.outputField ?? 'result';
+    
+    const sensitivities: SensitivityResult[] = [];
+    for (const param of multiOpts.parameters) {
+      const result = runSensitivityAnalysis(graph, {
+        parameterNodeId: param.nodeId,
+        parameterField: param.field,
+        outputNodeId: outNode?.id ?? '',
+        outputField: outField,
+        range: param.range,
+        steps: param.steps,
+      });
+      sensitivities.push(result);
+    }
+    
+    return {
+      success: sensitivities.every(s => s.success),
+      sensitivities,
+    };
   }
   
-  const baseValue = (paramNode.data[parameterField] as number) ?? range[0];
+  // Handle both single-param calling conventions
+  let pNodeId: string, pField: string, oNodeId: string, oField: string, r: [number, number], s: number;
+  
+  if (typeof optionsOrNodeId === 'object') {
+    pNodeId = optionsOrNodeId.parameterNodeId;
+    pField = optionsOrNodeId.parameterField;
+    oNodeId = optionsOrNodeId.outputNodeId;
+    oField = optionsOrNodeId.outputField;
+    r = optionsOrNodeId.range;
+    s = optionsOrNodeId.steps ?? 10;
+  } else {
+    pNodeId = optionsOrNodeId;
+    pField = parameterField!;
+    oNodeId = outputNodeId!;
+    oField = outputField!;
+    r = range!;
+    s = steps;
+  }
+  
+  const results: { input: number; output: number }[] = [];
+  const stepSize = (r[1] - r[0]) / (s - 1);
+  
+  // Find the parameter node
+  const paramNode = graph.nodes.find(n => n.id === pNodeId);
+  if (!paramNode) {
+    return {
+      success: false,
+      parameterId: `${pNodeId}:${pField}`,
+      nodeId: pNodeId,
+      field: pField,
+      baseValue: 0,
+      sensitivity: 0,
+      elasticity: 0,
+      dataPoints: [],
+      values: [],
+      error: `Parameter node ${pNodeId} not found`,
+    };
+  }
+  
+  const baseValue = (paramNode.data[pField] as number) ?? r[0];
   
   // Run graph for each parameter value
-  for (let i = 0; i < steps; i++) {
-    const inputValue = range[0] + i * step;
+  for (let i = 0; i < s; i++) {
+    const inputValue = r[0] + i * stepSize;
     
     // Create modified graph with new parameter value
     const modifiedGraph = {
       ...graph,
       nodes: graph.nodes.map(n => 
-        n.id === parameterNodeId
-          ? { ...n, data: { ...n.data, [parameterField]: inputValue, value: inputValue } }
+        n.id === pNodeId
+          ? { ...n, data: { ...n.data, [pField]: inputValue, value: inputValue } }
           : n
       ),
     };
     
-    const execResult = executeGraph(modifiedGraph);
+    const execResult = executeGraphSync(modifiedGraph);
     
     if (execResult.success) {
-      const outputNode = execResult.outputNodes.find(o => o.nodeId === outputNodeId);
-      const outputValue = outputNode?.outputs[outputField];
+      const outputNode = execResult.outputNodes.find(o => o.nodeId === oNodeId);
+      const outputValue = outputNode?.outputs[oField];
       if (typeof outputValue === 'number') {
         results.push({ input: inputValue, output: outputValue });
       }
@@ -672,38 +993,42 @@ export function runSensitivityAnalysis(
   // Calculate sensitivity metrics
   if (results.length < 2) {
     return {
-      parameterId: `${parameterNodeId}:${parameterField}`,
-      nodeId: parameterNodeId,
-      field: parameterField,
+      success: true,
+      parameterId: `${pNodeId}:${pField}`,
+      nodeId: pNodeId,
+      field: pField,
       baseValue,
       sensitivity: 0,
       elasticity: 0,
+      dataPoints: results,
       values: results,
     };
   }
   
   // Linear regression for sensitivity
   const n = results.length;
-  const sumX = results.reduce((s, r) => s + r.input, 0);
-  const sumY = results.reduce((s, r) => s + r.output, 0);
-  const sumXY = results.reduce((s, r) => s + r.input * r.output, 0);
-  const sumX2 = results.reduce((s, r) => s + r.input * r.input, 0);
+  const sumX = results.reduce((sum, r) => sum + r.input, 0);
+  const sumY = results.reduce((sum, r) => sum + r.output, 0);
+  const sumXY = results.reduce((sum, r) => sum + r.input * r.output, 0);
+  const sumX2 = results.reduce((sum, r) => sum + r.input * r.input, 0);
   
-  const sensitivity = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const sensitivityCoeff = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
   
   // Calculate elasticity at base value
-  const baseOutput = results.find(r => Math.abs(r.input - baseValue) < step / 2)?.output ?? sumY / n;
+  const baseOutput = results.find(r => Math.abs(r.input - baseValue) < stepSize / 2)?.output ?? sumY / n;
   const elasticity = baseValue !== 0 && baseOutput !== 0
-    ? (sensitivity * baseValue) / baseOutput
+    ? (sensitivityCoeff * baseValue) / baseOutput
     : 0;
   
   return {
-    parameterId: `${parameterNodeId}:${parameterField}`,
-    nodeId: parameterNodeId,
-    field: parameterField,
+    success: true,
+    parameterId: `${pNodeId}:${pField}`,
+    nodeId: pNodeId,
+    field: pField,
     baseValue,
-    sensitivity,
+    sensitivity: sensitivityCoeff,
     elasticity,
     values: results,
+    dataPoints: results,
   };
 }

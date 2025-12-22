@@ -341,7 +341,8 @@ export function processFeedbackLoop(
   };
   
   // Update history (respect stateHistory limit)
-  const newHistory = [...state.history, historyEntry].slice(-loop.stateHistory);
+  const historyLimit = loop.stateHistory ?? 100;
+  const newHistory = [...state.history, historyEntry].slice(-historyLimit);
   
   // Create updated state
   const updatedState: FeedbackState = {

@@ -202,7 +202,7 @@ export interface FeedbackLoop {
   
   // State management
   initialValue: unknown;
-  stateHistory: number;
+  stateHistory?: number;
   
   // Convergence detection
   convergence?: FeedbackConvergenceConfig;

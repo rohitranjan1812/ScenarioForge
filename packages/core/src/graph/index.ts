@@ -75,6 +75,31 @@ export function updateNode(
   };
 }
 
+/**
+ * Update a node within a graph by nodeId, returning a new graph
+ * This is the graph-level API for node updates
+ */
+export function updateNodeInGraph(
+  graph: Graph,
+  nodeId: string,
+  input: UpdateNodeInput
+): Graph {
+  const nodeIndex = graph.nodes.findIndex(n => n.id === nodeId);
+  if (nodeIndex === -1) {
+    return graph; // Node not found, return unchanged
+  }
+  
+  const updatedNode = updateNode(graph.nodes[nodeIndex], input);
+  const newNodes = [...graph.nodes];
+  newNodes[nodeIndex] = updatedNode;
+  
+  return {
+    ...graph,
+    nodes: newNodes,
+    updatedAt: new Date(),
+  };
+}
+
 // ============================================
 // Edge Factory
 // ============================================
@@ -208,12 +233,32 @@ export function getEdge(graph: Graph, edgeId: string): EdgeDefinition | undefine
   return graph.edges.find((e) => e.id === edgeId);
 }
 
+// Helper to get target node ID supporting both EdgeDefinition and React Flow formats
+export function getTargetNodeId(edge: EdgeDefinition): string {
+  return edge.targetNodeId ?? (edge as unknown as { target: string }).target;
+}
+
+// Helper to get source node ID supporting both formats
+export function getSourceNodeId(edge: EdgeDefinition): string {
+  return edge.sourceNodeId ?? (edge as unknown as { source: string }).source;
+}
+
+// Helper to get target port ID supporting both formats  
+export function getTargetPortId(edge: EdgeDefinition): string {
+  return edge.targetPortId ?? (edge as unknown as { targetHandle: string }).targetHandle;
+}
+
+// Helper to get source port ID supporting both formats
+export function getSourcePortId(edge: EdgeDefinition): string {
+  return edge.sourcePortId ?? (edge as unknown as { sourceHandle: string }).sourceHandle;
+}
+
 export function getNodeInputEdges(graph: Graph, nodeId: string): EdgeDefinition[] {
-  return graph.edges.filter((e) => e.targetNodeId === nodeId);
+  return graph.edges.filter((e) => getTargetNodeId(e) === nodeId);
 }
 
 export function getNodeOutputEdges(graph: Graph, nodeId: string): EdgeDefinition[] {
-  return graph.edges.filter((e) => e.sourceNodeId === nodeId);
+  return graph.edges.filter((e) => getSourceNodeId(e) === nodeId);
 }
 
 export function getConnectedNodes(graph: Graph, nodeId: string): NodeDefinition[] {
@@ -284,19 +329,21 @@ export function validateGraph(graph: Graph): ValidationResult {
     edgeIds.add(edge.id);
   }
   
-  // Validate edge references
+  // Validate edge references (supports both EdgeDefinition and React Flow formats)
   for (const edge of graph.edges) {
-    if (!nodeIds.has(edge.sourceNodeId)) {
+    const sourceId = getSourceNodeId(edge);
+    const targetId = getTargetNodeId(edge);
+    if (!nodeIds.has(sourceId)) {
       errors.push({
         code: 'INVALID_SOURCE_NODE',
-        message: `Edge ${edge.id} references non-existent source node: ${edge.sourceNodeId}`,
+        message: `Edge ${edge.id} references non-existent source node: ${sourceId}`,
         edgeId: edge.id,
       });
     }
-    if (!nodeIds.has(edge.targetNodeId)) {
+    if (!nodeIds.has(targetId)) {
       errors.push({
         code: 'INVALID_TARGET_NODE',
-        message: `Edge ${edge.id} references non-existent target node: ${edge.targetNodeId}`,
+        message: `Edge ${edge.id} references non-existent target node: ${targetId}`,
         edgeId: edge.id,
       });
     }
@@ -305,7 +352,7 @@ export function validateGraph(graph: Graph): ValidationResult {
   // Check for disconnected nodes (warning)
   for (const node of graph.nodes) {
     const hasConnections = graph.edges.some(
-      (e) => e.sourceNodeId === node.id || e.targetNodeId === node.id
+      (e) => getSourceNodeId(e) === node.id || getTargetNodeId(e) === node.id
     );
     if (!hasConnections) {
       warnings.push({
@@ -346,16 +393,19 @@ export function topologicalSort(graph: Graph): NodeDefinition[] | null {
     adjacency.set(node.id, []);
   }
   
-  // Build adjacency and count in-degrees
+  // Build adjacency and count in-degrees (supports both edge formats)
   for (const edge of graph.edges) {
     // Skip feedback edges for topological ordering
     if (edge.type === 'FEEDBACK') continue;
     
-    const targets = adjacency.get(edge.sourceNodeId);
+    const sourceId = getSourceNodeId(edge);
+    const targetId = getTargetNodeId(edge);
+    
+    const targets = adjacency.get(sourceId);
     if (targets) {
-      targets.push(edge.targetNodeId);
+      targets.push(targetId);
     }
-    inDegree.set(edge.targetNodeId, (inDegree.get(edge.targetNodeId) ?? 0) + 1);
+    inDegree.set(targetId, (inDegree.get(targetId) ?? 0) + 1);
   }
   
   // Find nodes with no incoming edges
@@ -395,6 +445,77 @@ export function topologicalSort(graph: Graph): NodeDefinition[] | null {
 
 export function detectCycle(graph: Graph): boolean {
   return topologicalSort(graph) === null;
+}
+
+// Alias for detectCycle for backward compatibility
+export const hasCycle = detectCycle;
+
+// ============================================
+// Node Lookup Utilities
+// ============================================
+
+/**
+ * Get a node by ID from a graph
+ */
+export function getNodeById(graph: Graph, nodeId: string): NodeDefinition | undefined {
+  return graph.nodes.find(n => n.id === nodeId);
+}
+
+/**
+ * Get an edge by ID from a graph
+ */
+export function getEdgeById(graph: Graph, edgeId: string): EdgeDefinition | undefined {
+  return graph.edges.find(e => e.id === edgeId);
+}
+
+/**
+ * Find all cycles in a graph using DFS
+ * Returns array of node ID arrays representing each cycle
+ */
+export function findCycles(graph: Graph): string[][] {
+  const cycles: string[][] = [];
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+  const path: string[] = [];
+  
+  // Build adjacency list
+  const adjacency = new Map<string, string[]>();
+  for (const node of graph.nodes) {
+    adjacency.set(node.id, []);
+  }
+  for (const edge of graph.edges) {
+    adjacency.get(edge.sourceNodeId)?.push(edge.targetNodeId);
+  }
+  
+  function dfs(nodeId: string): void {
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+    path.push(nodeId);
+    
+    const neighbors = adjacency.get(nodeId) ?? [];
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        dfs(neighbor);
+      } else if (recursionStack.has(neighbor)) {
+        // Found a cycle - extract it from the path
+        const cycleStart = path.indexOf(neighbor);
+        if (cycleStart !== -1) {
+          cycles.push([...path.slice(cycleStart), neighbor]);
+        }
+      }
+    }
+    
+    path.pop();
+    recursionStack.delete(nodeId);
+  }
+  
+  for (const node of graph.nodes) {
+    if (!visited.has(node.id)) {
+      dfs(node.id);
+    }
+  }
+  
+  return cycles;
 }
 
 // ============================================
@@ -454,6 +575,7 @@ export function cloneGraph(graph: Graph, newName?: string): Graph {
     nodes: clonedNodes,
     edges: clonedEdges,
     metadata: { ...graph.metadata },
+    params: graph.params ? { ...graph.params } : undefined,
     version: 1,
     createdAt: now,
     updatedAt: now,
@@ -465,6 +587,7 @@ export function cloneGraph(graph: Graph, newName?: string): Graph {
 // ============================================
 
 export interface GraphExport {
+  name?: string;
   version: string;
   exportedAt: string;
   graph: Graph;
@@ -472,10 +595,26 @@ export interface GraphExport {
 
 export function exportGraph(graph: Graph): GraphExport {
   return {
+    name: graph.name, // Include name at root for convenience
     version: '1.0.0',
     exportedAt: new Date().toISOString(),
     graph,
   };
+}
+
+/**
+ * Export graph to a JSON string for storage/transfer
+ */
+export function exportGraphToJSON(graph: Graph): string {
+  return JSON.stringify(exportGraph(graph));
+}
+
+/**
+ * Import graph from a JSON string
+ */
+export function importGraphFromJSON(json: string): Graph {
+  const exported = JSON.parse(json) as GraphExport;
+  return importGraph(exported);
 }
 
 export function importGraph(exported: GraphExport): Graph {

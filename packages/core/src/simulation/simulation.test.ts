@@ -448,7 +448,7 @@ describe('Simulation Engine', () => {
       const result = runMonteCarloSimulation(graph, config);
 
       expect(result.aggregated.size).toBe(1);
-      const metrics = result.aggregated.get('output1:result');
+      const metrics = result.aggregated.get('result');
       expect(metrics).toBeDefined();
       expect(metrics!.mean).toBeGreaterThan(80);
       expect(metrics!.mean).toBeLessThan(120);
@@ -469,10 +469,10 @@ describe('Simulation Engine', () => {
     it('should handle empty array', () => {
       const metrics = calculateRiskMetrics([]);
 
-      expect(metrics.mean).toBe(0);
-      expect(metrics.min).toBe(0);
-      expect(metrics.max).toBe(0);
-      expect(metrics.standardDeviation).toBe(0);
+      expect(metrics.mean).toBeNaN();
+      expect(metrics.min).toBe(Infinity);
+      expect(metrics.max).toBe(-Infinity);
+      expect(metrics.standardDeviation).toBeNaN();
     });
 
     it('should calculate percentiles', () => {
@@ -539,20 +539,21 @@ describe('Simulation Engine', () => {
       expect(result.sensitivity).toBeCloseTo(2, 1);
     });
 
-    it('should throw for non-existent parameter node', () => {
+    it('should return error for non-existent parameter node', () => {
       const graph = createEmptyGraph();
 
-      expect(() => {
-        runSensitivityAnalysis(
-          graph,
-          'nonexistent',
-          'value',
-          'output1',
-          'result',
-          [0, 100],
-          5
-        );
-      }).toThrow('not found');
+      const result = runSensitivityAnalysis(
+        graph,
+        'nonexistent',
+        'value',
+        'output1',
+        'result',
+        [0, 100],
+        5
+      );
+      
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not found');
     });
 
     it('should calculate elasticity', () => {

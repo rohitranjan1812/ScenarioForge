@@ -62,7 +62,7 @@ export function SimulationPanel() {
     try {
       const startTime = Date.now();
       // Pass graph params to expression context
-      const result = executeGraph(currentGraph, currentGraph.params ?? {});
+      const result = await Promise.resolve(executeGraph(currentGraph, currentGraph.params ?? {}));
       const executionTimeMs = Date.now() - startTime;
       
       if (!result.success) {

@@ -318,7 +318,7 @@ router.post('/execute', async (req: Request, res: Response): Promise<void> => {
     }
     
     const startTime = Date.now();
-    const result = executeGraph(graph, params ?? {});
+    const result = await Promise.resolve(executeGraph(graph, params ?? {}));
     const executionTimeMs = Date.now() - startTime;
     
     // Convert Map to object for JSON response
