@@ -9,6 +9,7 @@ import { GraphSelector } from './components/panels/GraphSelector';
 import { FeedbackLoopsPanel } from './components/panels/FeedbackLoopsPanel';
 import { HierarchyPanel } from './components/panels/HierarchyPanel';
 import { SubgraphTutorial } from './components/panels/SubgraphTutorial';
+import { GuidedDemo } from './components/demo/GuidedDemo';
 import { useGraphStore } from './stores/graphStore';
 import 'reactflow/dist/style.css';
 
@@ -170,6 +171,9 @@ export default function App() {
       
       {/* Floating Tutorial */}
       <SubgraphTutorial />
+      
+      {/* Interactive Demo */}
+      <GuidedDemo />
     </div>
   );
 }
